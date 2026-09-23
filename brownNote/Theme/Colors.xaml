@@ -18,7 +18,7 @@
     <SolidColorBrush x:Key="BorderBrush" Color="#525252" />
     <SolidColorBrush x:Key="BorderStrongBrush" Color="#5E5E5E" />
     <SolidColorBrush x:Key="PrimaryTextBrush" Color="#FFFFFF" />
-    <SolidColorBrush x:Key="SecondaryTextBrush" Color="#DCD2E6" />
+    <SolidColorBrush x:Key="SecondaryTextBrush" Color="#D0D0D0" />
     <SolidColorBrush x:Key="TertiaryTextBrush" Color="#CCCCCC" />
     <SolidColorBrush x:Key="MutedTextBrush" Color="#B3B3B3" />
     <SolidColorBrush x:Key="DimTextBrush" Color="#888888" />

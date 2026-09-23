@@ -103,7 +103,8 @@ function writeClearedLine {
 }
 
 function closeOut {
-    param([int]$Seconds = 5)
+    param([int]$Seconds = 5, [switch]$KeepOpen)
+    if ($KeepOpen) { return }
     if ($env:BASE_BUILD_PIPELINE) { return }
     if ($Seconds -lt 0) { $Seconds = 0 }
     if ($Seconds -gt 0) {

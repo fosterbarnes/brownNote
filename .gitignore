@@ -5,3 +5,4 @@ publish/
 .version/versionBuild
 *.user
 *.suo
+*.md

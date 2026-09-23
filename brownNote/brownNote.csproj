@@ -7,6 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>brownNote</RootNamespace>
     <AssemblyName>brownNote</AssemblyName>
+    <ApplicationIcon>..\.res\icon\icon.ico</ApplicationIcon>
     <Platforms>x64;ARM64</Platforms>
     <PlatformTarget Condition="'$(Platform)' == 'x64'">x64</PlatformTarget>
     <PlatformTarget Condition="'$(Platform)' == 'ARM64' Or '$(Platform)' == 'arm64'">ARM64</PlatformTarget>
@@ -14,13 +15,12 @@
 
   <ItemGroup>
     <PackageReference Include="NAudio.Wasapi" Version="3.1.0" />
-    <PackageReference Include="Concentus.Oggfile" Version="1.0.7" />
+    <PackageReference Include="MaterialDesignThemes" Version="4.9.0" />
+    <PackageReference Include="MaterialDesignColors" Version="2.1.4" />
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="..\.noise\brown.opus" Link=".noise\brown.opus">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-    </Content>
+    <Resource Include="..\.res\icon\icon512.png" Link="Resources\icon512.png" />
+    <Content Include="..\.version\version" Link="Version" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Always" />
   </ItemGroup>
 </Project>

@@ -1,10 +1,13 @@
+using System.Globalization;
+using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Navigation;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-
-using NAudio.Wave;
 
 using brownNote.Audio;
 using brownNote.Helpers;
@@ -19,26 +22,202 @@ public enum FooterButtonScope
 
 public partial class MainWindow : System.Windows.Window
 {
-    private static readonly string _assetPath = Path.Combine(AppContext.BaseDirectory, ".noise", "brown.opus");
     private static readonly TimeSpan _tabTransitionDuration = TimeSpan.FromMilliseconds(180);
+    private const double _MINIMUM_INTEGRATOR_CUTOFF = 10;
+    private const double _MAXIMUM_INTEGRATOR_CUTOFF = 500;
 
-    private readonly OpusAssetLoader _assetLoader = new();
-    private WasapiPlayer? _player;
-    private LoopingSampleProvider? _provider;
-    private OpusAsset? _asset;
-    private bool _isClosing;
+    private readonly GeneratedAudioPlayer _generatedAudioPlayer = new();
+    private readonly string _aboutInstallPath = AppContext.BaseDirectory.TrimEnd(
+        Path.DirectorySeparatorChar,
+        Path.AltDirectorySeparatorChar);
+    private readonly string _aboutSettingsPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "brownNote");
+    private FrameworkElement? _activePage;
+    private int _pageTransition;
 
     public MainWindow()
     {
         InitializeComponent();
+        InitializeAboutPage();
+        RestorePreferences();
         WindowLocationStore.Restore(this);
         SourceInitialized += (_, _) => WindowsTitleBarTheme.ApplyImmersiveDarkMode(this);
     }
 
+    private void InitializeAboutPage()
+    {
+        AboutTitleText.Text = $"brownNote ({GetPlatformLabel()})";
+        AboutVersionText.Text = $"v{ReadVersion()}";
+        AboutInstallPathText.Text = _aboutInstallPath;
+        AboutSettingsPathText.Text = _aboutSettingsPath;
+    }
+
+    private static string ReadVersion()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "Version");
+        return File.ReadLines(path).First(line => !string.IsNullOrWhiteSpace(line)).Trim().TrimStart('v', 'V');
+    }
+
+    private static string GetPlatformLabel() => RuntimeInformation.ProcessArchitecture switch
+    {
+        Architecture.X64 => "x64",
+        Architecture.Arm64 => "ARM64",
+        var architecture => architecture.ToString()
+    };
+
+    private void RestorePreferences()
+    {
+        var preferences = AppPreferencesStore.Load();
+        ModeTabs.SelectedIndex = preferences.SelectedTab;
+        GeneratedVolumeSlider.Value = preferences.GeneratedVolume;
+        NoiseDensitySlider.Value = preferences.NoiseDensity;
+        LowPassCutoffSlider.Value = preferences.LowPassCutoff;
+        HighPassCutoffSlider.Value = preferences.HighPassCutoff;
+        BrownnessSlider.Value = preferences.Brownness;
+    }
+
     private void MainWindow_Loaded(object sender, System.Windows.RoutedEventArgs e)
     {
+        _generatedAudioPlayer.Volume = (float)GeneratedVolumeSlider.Value;
+        _generatedAudioPlayer.NoiseDensity = (int)NoiseDensitySlider.Value;
+        _generatedAudioPlayer.LowPassCutoff = (float)LowPassCutoffSlider.Value;
+        _generatedAudioPlayer.HighPassCutoff = (float)HighPassCutoffSlider.Value;
+        _generatedAudioPlayer.IntegratorCutoff = IntegratorCutoffFromBrownness(BrownnessSlider.Value);
         UpdateTabForegrounds(false);
         UpdateTabRowLayout(false);
+        ShowModePage(false);
+    }
+
+    private void GeneratedVolumeSlider_ValueChanged(object sender, System.Windows.RoutedPropertyChangedEventArgs<double> e)
+    {
+        _generatedAudioPlayer.Volume = (float)e.NewValue;
+    }
+
+    private void NoiseDensitySlider_ValueChanged(
+        object sender,
+        System.Windows.RoutedPropertyChangedEventArgs<double> e)
+    {
+        _generatedAudioPlayer.NoiseDensity = (int)e.NewValue;
+    }
+
+    private void LowPassCutoffSlider_ValueChanged(
+        object sender,
+        System.Windows.RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (HighPassCutoffSlider is not null && e.NewValue <= HighPassCutoffSlider.Value)
+        {
+            LowPassCutoffSlider.Value = e.OldValue;
+            return;
+        }
+
+        _generatedAudioPlayer.LowPassCutoff = (float)e.NewValue;
+    }
+
+    private void HighPassCutoffSlider_ValueChanged(
+        object sender,
+        System.Windows.RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (e.NewValue >= LowPassCutoffSlider.Value)
+        {
+            HighPassCutoffSlider.Value = e.OldValue;
+            return;
+        }
+
+        _generatedAudioPlayer.HighPassCutoff = (float)e.NewValue;
+    }
+
+    private void BrownnessSlider_ValueChanged(
+        object sender,
+        System.Windows.RoutedPropertyChangedEventArgs<double> e)
+    {
+        _generatedAudioPlayer.IntegratorCutoff = IntegratorCutoffFromBrownness(e.NewValue);
+    }
+
+    private void AudioValueEditor_GotFocus(object sender, RoutedEventArgs e)
+    {
+        ((TextBox)sender).SelectAll();
+    }
+
+    private void AudioValueEditor_LostFocus(object sender, RoutedEventArgs e)
+    {
+        CommitAudioValue((TextBox)sender);
+    }
+
+    private void AudioValueEditor_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        var editor = (TextBox)sender;
+        if (e.Key == Key.Enter)
+        {
+            CommitAudioValue(editor);
+            editor.MoveFocus(new TraversalRequest(FocusNavigationDirection.Next));
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            RefreshAudioValue(editor);
+            editor.MoveFocus(new TraversalRequest(FocusNavigationDirection.Next));
+            e.Handled = true;
+        }
+    }
+
+    private void CommitAudioValue(TextBox editor)
+    {
+        if (editor.Tag is not Slider slider)
+        {
+            return;
+        }
+
+        var metric = SliderMetric.GetMetric(slider);
+        if (!TryParseAudioValue(editor.Text, metric, out var value))
+        {
+            RefreshAudioValue(editor);
+            return;
+        }
+
+        if (metric == AudioMetric.Percentage)
+        {
+            value /= 100;
+        }
+
+        if (!double.IsFinite(value) || value < slider.Minimum || value > slider.Maximum ||
+            (metric == AudioMetric.Count && value != Math.Truncate(value)) ||
+            (ReferenceEquals(slider, LowPassCutoffSlider) && value <= HighPassCutoffSlider.Value) ||
+            (ReferenceEquals(slider, HighPassCutoffSlider) && value >= LowPassCutoffSlider.Value))
+        {
+            RefreshAudioValue(editor);
+            return;
+        }
+
+        slider.Value = value;
+        RefreshAudioValue(editor);
+    }
+
+    private static bool TryParseAudioValue(string text, AudioMetric metric, out double value)
+    {
+        var suffix = metric switch
+        {
+            AudioMetric.Percentage or AudioMetric.WholePercentage => CultureInfo.CurrentCulture.NumberFormat.PercentSymbol,
+            AudioMetric.Hertz => "Hz",
+            AudioMetric.Count => "voices",
+            _ => string.Empty
+        };
+        var numericText = text.Trim();
+        if (suffix.Length > 0 && numericText.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+        {
+            numericText = numericText[..^suffix.Length].Trim();
+        }
+
+        return double.TryParse(
+            numericText,
+            NumberStyles.Float | NumberStyles.AllowThousands,
+            CultureInfo.CurrentCulture,
+            out value);
+    }
+
+    private static void RefreshAudioValue(TextBox editor)
+    {
+        editor.GetBindingExpression(TextBox.TextProperty)?.UpdateTarget();
     }
 
     private void ModeTabs_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
@@ -47,6 +226,10 @@ public partial class MainWindow : System.Windows.Window
         {
             UpdateTabForegrounds(true);
             UpdateTabRowLayout(true);
+            if (IsLoaded)
+            {
+                ShowModePage(true);
+            }
         }
     }
 
@@ -109,6 +292,66 @@ public partial class MainWindow : System.Windows.Window
         }
     }
 
+    private void ShowModePage(bool animate)
+    {
+        FrameworkElement? nextPage = ModeTabs.SelectedIndex switch
+        {
+            0 => GeneratedAudioPage,
+            1 => AboutPage,
+            _ => null
+        };
+        if (nextPage is null || ReferenceEquals(nextPage, _activePage))
+        {
+            return;
+        }
+
+        var previousPage = _activePage;
+        _activePage = nextPage;
+        var transition = ++_pageTransition;
+
+        nextPage.BeginAnimation(UIElement.OpacityProperty, null);
+        nextPage.Visibility = Visibility.Visible;
+        if (!animate || previousPage is null)
+        {
+            nextPage.Opacity = 1;
+            HideInactivePage(AboutPage, nextPage);
+            HideInactivePage(GeneratedAudioPage, nextPage);
+            return;
+        }
+
+        previousPage.BeginAnimation(UIElement.OpacityProperty, null);
+        previousPage.Visibility = Visibility.Visible;
+        previousPage.Opacity = 1;
+        nextPage.Opacity = 0;
+
+        var fadeOut = new DoubleAnimation(1, 0, _tabTransitionDuration);
+        var fadeIn = new DoubleAnimation(0, 1, _tabTransitionDuration);
+        fadeIn.Completed += (_, _) =>
+        {
+            if (transition != _pageTransition)
+            {
+                return;
+            }
+
+            previousPage.Visibility = Visibility.Collapsed;
+            previousPage.Opacity = 0;
+        };
+        previousPage.BeginAnimation(UIElement.OpacityProperty, fadeOut);
+        nextPage.BeginAnimation(UIElement.OpacityProperty, fadeIn);
+    }
+
+    private static void HideInactivePage(FrameworkElement page, FrameworkElement activePage)
+    {
+        if (ReferenceEquals(page, activePage))
+        {
+            return;
+        }
+
+        page.BeginAnimation(UIElement.OpacityProperty, null);
+        page.Opacity = 0;
+        page.Visibility = Visibility.Collapsed;
+    }
+
     private void UpdateTabForegrounds(bool animate)
     {
         var selectedColor = ((SolidColorBrush)FindResource("PrimaryTextBrush")).Color;
@@ -153,15 +396,13 @@ public partial class MainWindow : System.Windows.Window
         if (PlayButton.Tag is not FooterButtonScope.TabSpecific)
             return;
 
-        switch (ModeTabs.SelectedIndex)
+        if (ModeTabs.SelectedIndex == 0)
         {
-            case 0:
-                PlayOpus();
-                break;
+            PlayGeneratedAudio();
         }
     }
 
-    private void PlayOpus()
+    private void PlayGeneratedAudio()
     {
         if (!StopAudio())
         {
@@ -170,20 +411,11 @@ public partial class MainWindow : System.Windows.Window
 
         try
         {
-            var asset = _assetLoader.Load(_assetPath);
-            var provider = new LoopingSampleProvider(asset.Samples, asset.Channels);
-            var player = new WasapiPlayerBuilder().Build();
-
-            _asset = asset;
-            _provider = provider;
-            _player = player;
-            player.PlaybackStopped += Player_PlaybackStopped;
-            player.Init(provider);
-            player.Play();
+            _generatedAudioPlayer.Play();
         }
         catch (Exception)
         {
-            DisposeAudio();
+            _generatedAudioPlayer.Stop();
         }
     }
 
@@ -195,78 +427,61 @@ public partial class MainWindow : System.Windows.Window
         StopAudio();
     }
 
-    private void Player_PlaybackStopped(object? sender, StoppedEventArgs e)
+    private void AboutOpenInstallLocation_Click(object sender, RoutedEventArgs e)
     {
-        if (_isClosing)
-        {
-            return;
-        }
+        OpenAboutFolder(_aboutInstallPath);
+    }
 
-        DisposeAudio();
+    private void AboutOpenSettingsLocation_Click(object sender, RoutedEventArgs e)
+    {
+        Directory.CreateDirectory(_aboutSettingsPath);
+        OpenAboutFolder(_aboutSettingsPath);
+    }
+
+    private static void OpenAboutFolder(string path)
+    {
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = path,
+            UseShellExecute = true
+        });
+    }
+
+    private void AboutHyperlink_RequestNavigate(object sender, RequestNavigateEventArgs e)
+    {
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = e.Uri.AbsoluteUri,
+            UseShellExecute = true
+        });
+        e.Handled = true;
     }
 
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        AppPreferencesStore.Save(new AppPreferences(
+            ModeTabs.SelectedIndex,
+            GeneratedVolumeSlider.Value,
+            (int)NoiseDensitySlider.Value,
+            LowPassCutoffSlider.Value,
+            HighPassCutoffSlider.Value,
+            BrownnessSlider.Value));
         WindowLocationStore.Save(this);
-        _isClosing = true;
-        DisposeAudio();
+        StopAudio();
     }
 
     private bool StopAudio()
     {
-        var cleanupError = DisposeAudio();
-        if (cleanupError is not null)
-        {
-            return false;
-        }
-
-        return true;
+        return _generatedAudioPlayer.Stop() is null;
     }
 
-    private Exception? DisposeAudio()
+    private static float IntegratorCutoffFromBrownness(double brownness)
     {
-        var player = _player;
-        var provider = _provider;
-        _player = null;
-        _provider = null;
-        _asset = null;
-
-        Exception? cleanupError = null;
-        if (player is not null)
-        {
-            player.PlaybackStopped -= Player_PlaybackStopped;
-            try
-            {
-                player.Stop();
-            }
-            catch (Exception exception)
-            {
-                cleanupError = exception;
-            }
-
-            try
-            {
-                player.Dispose();
-            }
-            catch (Exception exception)
-            {
-                cleanupError ??= exception;
-            }
-        }
-
-        if (provider is not null)
-        {
-            try
-            {
-                provider.Dispose();
-            }
-            catch (Exception exception)
-            {
-                cleanupError ??= exception;
-            }
-        }
-
-        return cleanupError;
+        var normalized = Math.Clamp(brownness, 0, 100) / 100;
+        var cutoff = _MAXIMUM_INTEGRATOR_CUTOFF * Math.Pow(
+            _MINIMUM_INTEGRATOR_CUTOFF / _MAXIMUM_INTEGRATOR_CUTOFF,
+            normalized);
+        return (float)cutoff;
     }
 
 }
