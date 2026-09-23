@@ -1,0 +1,46 @@
+<Window x:Class="brownNote.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:brownNote"
+        Title="brownNote"
+        Width="650"
+        Height="730"
+        MinWidth="420"
+        MinHeight="420"
+        WindowStartupLocation="Manual"
+        Background="{StaticResource AppBackgroundBrush}"
+        Foreground="{StaticResource PrimaryTextBrush}"
+        Loaded="MainWindow_Loaded"
+        Closing="Window_Closing">
+    <Grid Margin="{StaticResource PageMargin}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <TabControl x:Name="ModeTabs"
+                    Grid.Row="0"
+                    SelectionChanged="ModeTabs_SelectionChanged"
+                    SizeChanged="ModeTabs_SizeChanged">
+            <TabItem Header=".opus" />
+            <TabItem Header="Software Audio" />
+        </TabControl>
+        <StackPanel Grid.Row="1"
+                    Margin="0,14,0,0"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right">
+            <Button Click="StopButton_Click"
+                    Content="Stop"
+                    IsCancel="True"
+                    Margin="0"
+                    Tag="{x:Static local:FooterButtonScope.ProjectWide}"
+                    Style="{StaticResource NeutralButtonStyle}" />
+            <Button x:Name="PlayButton"
+                    Click="PlayButton_Click"
+                    Content="Play"
+                    IsDefault="True"
+                    Margin="8,0,0,0"
+                    Tag="{x:Static local:FooterButtonScope.TabSpecific}"
+                    Style="{StaticResource NeutralButtonStyle}" />
+        </StackPanel>
+    </Grid>
+</Window>
