@@ -3,7 +3,6 @@
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
     <Thickness x:Key="PageMargin">12</Thickness>
     <Thickness x:Key="SegmentStripMargin">0,0,0,10</Thickness>
-    <Thickness x:Key="PanelPadding">10</Thickness>
     <Thickness x:Key="ContentPanelPadding">16</Thickness>
     <Thickness x:Key="ControlMargin">0,0,8,0</Thickness>
     <Thickness x:Key="TabPadding">8,6</Thickness>

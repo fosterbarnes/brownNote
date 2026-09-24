@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using brownNote.Audio;
 
 namespace brownNote.Helpers;
 
@@ -62,7 +63,7 @@ internal sealed record AppPreferences(
 
     public AppPreferences Normalize() => new(
         Math.Clamp(SelectedTab, 0, 1),
-        Math.Clamp(GeneratedVolume, 0, 1),
+        Math.Clamp(GeneratedVolume, 0, BrownNoiseProvider.MaximumOutputGain),
         Math.Clamp(NoiseDensity, 1, 12),
         Math.Clamp(LowPassCutoff, 80, 24000),
         Math.Clamp(HighPassCutoff, 10, 1000),

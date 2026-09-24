@@ -22,15 +22,19 @@ public sealed class GeneratedAudioPlayer : IDisposable
         get => _volume;
         set
         {
-            if (float.IsNaN(value) || value is < 0f or > 1f)
+            if (float.IsNaN(value) || value is < 0f or > BrownNoiseProvider.MaximumOutputGain)
             {
                 throw new ArgumentOutOfRangeException(nameof(value));
             }
 
             _volume = value;
+            if (_provider is not null)
+            {
+                _provider.OutputGain = value;
+            }
             if (_player is not null)
             {
-                _player.Volume = value;
+                _player.Volume = 1f;
             }
         }
     }
@@ -102,7 +106,8 @@ public sealed class GeneratedAudioPlayer : IDisposable
         try
         {
             player.Init(provider);
-            player.Volume = Volume;
+            provider.OutputGain = Volume;
+            player.Volume = 1f;
             player.Play();
             _provider = provider;
             _player = player;

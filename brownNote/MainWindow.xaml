@@ -178,7 +178,7 @@
                     </Grid>
                     <Slider x:Name="GeneratedVolumeSlider"
                             Minimum="0"
-                            Maximum="1"
+                            Maximum="10"
                             TickFrequency="0.01"
                             IsSnapToTickEnabled="True"
                             helpers:SliderMetric.Metric="{x:Static helpers:AudioMetric.Percentage}"

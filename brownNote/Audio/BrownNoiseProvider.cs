@@ -8,8 +8,9 @@ public sealed class BrownNoiseProvider : ISampleProvider
     public const int Channels = 2;
     public const int MinimumNoiseDensity = 1;
     public const int MaximumNoiseDensity = 12;
+    public const float MaximumOutputGain = 10f;
 
-    private const float OutputGain = 3.5f;
+    private const float BaseOutputGain = 3.5f;
     private const float MinimumCutoff = 1f;
     private const float CoefficientTransition = 0.002f;
     private const float LowPassVariation = 0.05f;
@@ -31,6 +32,7 @@ public sealed class BrownNoiseProvider : ISampleProvider
     private readonly float[] _integratorCoefficients = new float[MaximumNoiseDensity];
     private readonly float[] _highPassCoefficients = new float[MaximumNoiseDensity];
     private readonly float[] _lowPassCoefficients = new float[MaximumNoiseDensity];
+    private float _outputGain = 1f;
     private float _currentSample;
     private int _channelPosition;
 
@@ -78,6 +80,20 @@ public sealed class BrownNoiseProvider : ISampleProvider
     }
 
     public WaveFormat WaveFormat { get; }
+
+    public float OutputGain
+    {
+        get => Volatile.Read(ref _outputGain);
+        set
+        {
+            if (float.IsNaN(value) || value is < 0f or > MaximumOutputGain)
+            {
+                throw new ArgumentOutOfRangeException(nameof(value));
+            }
+
+            Volatile.Write(ref _outputGain, value);
+        }
+    }
 
     public void UpdateCutoffs(float highPassCutoff, float lowPassCutoff, float integratorCutoff)
     {
@@ -129,7 +145,8 @@ public sealed class BrownNoiseProvider : ISampleProvider
                     sample += _lowPassOutputs[voice] * _voiceGains[voice];
                 }
 
-                _currentSample = sample * OutputGain / MathF.Sqrt(noiseDensity);
+                _currentSample = sample * BaseOutputGain * Volatile.Read(ref _outputGain) /
+                    MathF.Sqrt(noiseDensity);
                 _channelPosition = 1;
             }
             else
