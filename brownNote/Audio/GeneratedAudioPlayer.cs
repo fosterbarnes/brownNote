@@ -19,7 +19,9 @@ public sealed class GeneratedAudioPlayer : IDisposable
 
     public AudioTap Tap { get; } = new();
 
-    public bool IsPlaying => _player is not null;
+    public event Action? FadedOut;
+
+    public bool IsPlaying => _provider is not null && !_provider.IsFadingOut;
 
     public float Volume
     {
@@ -95,6 +97,12 @@ public sealed class GeneratedAudioPlayer : IDisposable
 
     public void Play()
     {
+        if (_provider is not null)
+        {
+            _provider.FadeIn();
+            return;
+        }
+
         var cleanupError = Stop();
         if (cleanupError is not null)
         {
@@ -107,6 +115,7 @@ public sealed class GeneratedAudioPlayer : IDisposable
             IntegratorCutoff,
             NoiseDensity,
             Tap);
+        provider.FadedOut += () => FadedOut?.Invoke();
         var player = new WasapiPlayerBuilder().Build();
         try
         {
@@ -122,6 +131,11 @@ public sealed class GeneratedAudioPlayer : IDisposable
             player.Dispose();
             throw;
         }
+    }
+
+    public void Pause()
+    {
+        _provider?.FadeOut();
     }
 
     public Exception? Stop()

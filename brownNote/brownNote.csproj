@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <Resource Include="..\.res\icon\icon512.png" Link="Resources\icon512.png" />
+    <Content Include="..\.res\wav\*.wav" Link="Sounds\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Always" />
     <Content Include="..\.version\version" Link="Version" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Always" />
   </ItemGroup>
 </Project>

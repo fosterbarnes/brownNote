@@ -325,23 +325,33 @@
                 </Border>
             </Grid>
         </Grid>
-        <StackPanel Grid.Row="2"
-                    Margin="0,14,0,0"
-                    Orientation="Horizontal"
-                    HorizontalAlignment="Right">
-            <Button Click="StopButton_Click"
-                    Content="Stop"
-                    IsCancel="True"
-                    Margin="0"
-                    Tag="{x:Static local:FooterButtonScope.ProjectWide}"
-                    Style="{StaticResource NeutralButtonStyle}" />
-            <Button x:Name="PlayButton"
-                    Click="PlayButton_Click"
-                    Content="Play"
-                    IsDefault="True"
-                    Margin="8,0,0,0"
-                    Tag="{x:Static local:FooterButtonScope.TabSpecific}"
-                    Style="{StaticResource NeutralButtonStyle}" />
-        </StackPanel>
+        <Border Grid.Row="2"
+                Margin="0,14,0,0"
+                Padding="8"
+                HorizontalAlignment="Center"
+                CornerRadius="8"
+                Background="#1F1F1F"
+                BorderBrush="#2A2A2A"
+                BorderThickness="1">
+            <StackPanel Orientation="Horizontal">
+                <RadioButton x:Name="StopKey"
+                             GroupName="Transport"
+                             ToolTip="Stop"
+                             IsChecked="True"
+                             Checked="StopKey_Checked"
+                             Click="TransportKey_Click"
+                             Style="{StaticResource TransportKeyStyle}">
+                    <materialDesign:PackIcon Kind="Stop" Width="10" Height="10" />
+                </RadioButton>
+                <RadioButton x:Name="PlayKey"
+                             GroupName="Transport"
+                             ToolTip="Play"
+                             Checked="PlayKey_Checked"
+                             Click="TransportKey_Click"
+                             Style="{StaticResource TransportKeyStyle}">
+                    <materialDesign:PackIcon Kind="Play" Width="10" Height="10" />
+                </RadioButton>
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>

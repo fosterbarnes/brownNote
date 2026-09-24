@@ -11,9 +11,14 @@ $endIndex = $content.IndexOf($end, [StringComparison]::Ordinal)
 if ($startIndex -lt 0 -or $endIndex -lt $startIndex) { throw 'README Quick Reference markers are missing.' }
 $lines = @(
     $start
-    ''
-    "- Windows x64 portable: $appURL/releases/download/$tag/$(buildAssetName -Kind Portable -Architecture x64)"
-    "- Windows ARM64 portable: $appURL/releases/download/$tag/$(buildAssetName -Kind Portable -Architecture arm64)"
+    '<table border="0">'
+    '<tbody>'
+    '<tr>'
+    "<td valign=`"top`"><a href=`"$appURL/releases/download/$tag/$(buildAssetName -Kind Portable -Architecture x64)`"><img src=`"https://raw.githubusercontent.com/fosterbarnes/res/main/btn/x64Portable.svg`" width=`"180`" height=`"auto`" alt=`"Windows x64 portable ZIP`"/></a></td>"
+    "<td valign=`"top`"><a href=`"$appURL/releases/download/$tag/$(buildAssetName -Kind Portable -Architecture arm64)`"><img src=`"https://raw.githubusercontent.com/fosterbarnes/res/main/btn/arm64Portable.svg`" width=`"180`" height=`"auto`" alt=`"Windows ARM64 portable ZIP`"/></a></td>"
+    '</tr>'
+    '</tbody>'
+    '</table>'
     $end
 )
 $prefix = $content.Substring(0, $startIndex) ; $suffix = $content.Substring($endIndex + $end.Length)

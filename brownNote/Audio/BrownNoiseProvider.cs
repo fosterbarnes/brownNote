@@ -17,6 +17,10 @@ public sealed class BrownNoiseProvider : ISampleProvider
     private const float HighPassVariation = 0.03f;
     private const float IntegratorVariation = 0.05f;
     private const float GainVariation = 0.01f;
+    private const float FadeInSeconds = 1.5f;
+    private const float FadeOutSeconds = 2.5f;
+    private const float FadeInStep = 1f / (FadeInSeconds * SampleRate);
+    private const float FadeOutStep = 1f / (FadeOutSeconds * SampleRate);
 
     private readonly Random[] _randoms = new Random[MaximumNoiseDensity];
     private readonly float[] _voiceGains = new float[MaximumNoiseDensity];
@@ -36,6 +40,11 @@ public sealed class BrownNoiseProvider : ISampleProvider
     private float _outputGain = 1f;
     private float _currentSample;
     private int _channelPosition;
+    private float _fadePosition;
+    private volatile bool _fadingIn = true;
+    private bool _fadedOutRaised;
+
+    public event Action? FadedOut;
 
     public BrownNoiseProvider(
         float highPassCutoff,
@@ -98,6 +107,18 @@ public sealed class BrownNoiseProvider : ISampleProvider
         }
     }
 
+    public bool IsFadingOut => !_fadingIn;
+
+    public void FadeIn()
+    {
+        _fadingIn = true;
+    }
+
+    public void FadeOut()
+    {
+        _fadingIn = false;
+    }
+
     public void UpdateCutoffs(float highPassCutoff, float lowPassCutoff, float integratorCutoff)
     {
         ValidateCutoff(highPassCutoff, nameof(highPassCutoff));
@@ -148,7 +169,18 @@ public sealed class BrownNoiseProvider : ISampleProvider
                     sample += _lowPassOutputs[voice] * _voiceGains[voice];
                 }
 
-                _currentSample = sample * BaseOutputGain * Volatile.Read(ref _outputGain) /
+                if (_fadingIn)
+                {
+                    _fadePosition = MathF.Min(1f, _fadePosition + FadeInStep);
+                    _fadedOutRaised = false;
+                }
+                else
+                {
+                    _fadePosition = MathF.Max(0f, _fadePosition - FadeOutStep);
+                }
+
+                var fadeGain = _fadePosition * _fadePosition * _fadePosition;
+                _currentSample = sample * BaseOutputGain * Volatile.Read(ref _outputGain) * fadeGain /
                     MathF.Sqrt(noiseDensity);
                 _tap?.Write(_currentSample);
                 _channelPosition = 1;
@@ -159,6 +191,12 @@ public sealed class BrownNoiseProvider : ISampleProvider
             }
 
             buffer[index] = _currentSample;
+        }
+
+        if (!_fadingIn && _fadePosition == 0f && !_fadedOutRaised)
+        {
+            _fadedOutRaised = true;
+            FadedOut?.Invoke();
         }
 
         return buffer.Length;

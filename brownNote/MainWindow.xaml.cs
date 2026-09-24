@@ -15,12 +15,6 @@ using brownNote.Helpers;
 
 namespace brownNote;
 
-public enum FooterButtonScope
-{
-    TabSpecific,
-    ProjectWide
-}
-
 public partial class MainWindow : System.Windows.Window
 {
     private static readonly TimeSpan _tabTransitionDuration = TimeSpan.FromMilliseconds(180);
@@ -34,6 +28,8 @@ public partial class MainWindow : System.Windows.Window
     private readonly string _aboutSettingsPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "brownNote");
+    private readonly SoundEffects _soundEffects = new();
+    private bool _transportSwitched;
     private FrameworkElement? _activePage;
     private int _pageTransition;
 
@@ -44,6 +40,13 @@ public partial class MainWindow : System.Windows.Window
         RestorePreferences();
         WindowLocationStore.Restore(this);
         SourceInitialized += (_, _) => WindowsTitleBarTheme.ApplyImmersiveDarkMode(this);
+        _generatedAudioPlayer.FadedOut += () => Dispatcher.BeginInvoke(() =>
+        {
+            if (_generatedAudioPlayer.IsPlaying)
+                return;
+
+            StopAudio();
+        });
     }
 
     private void InitializeAboutPage()
@@ -409,24 +412,33 @@ public partial class MainWindow : System.Windows.Window
         }
     }
 
-    private void PlayButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    private void TransportKey_Click(object sender, RoutedEventArgs e)
     {
-        if (PlayButton.Tag is not FooterButtonScope.TabSpecific)
-            return;
-
-        if (ModeTabs.SelectedIndex == 0)
+        if (_transportSwitched)
         {
-            PlayGeneratedAudio();
+            _transportSwitched = false;
+            return;
         }
+
+        _soundEffects.ButtonMechanism();
     }
 
-    private void PlayGeneratedAudio()
+    private void OnTransportSwitched()
     {
-        if (!StopAudio())
-        {
+        if (!IsLoaded)
             return;
-        }
 
+        _soundEffects.ButtonDown();
+        _soundEffects.ButtonUp();
+
+        // Checked fires before Click during a click; keyboard switches have no Click to clear this.
+        _transportSwitched = true;
+        Dispatcher.BeginInvoke(() => _transportSwitched = false);
+    }
+
+    private void PlayKey_Checked(object sender, RoutedEventArgs e)
+    {
+        OnTransportSwitched();
         try
         {
             _generatedAudioPlayer.Play();
@@ -435,15 +447,14 @@ public partial class MainWindow : System.Windows.Window
         catch (Exception)
         {
             _generatedAudioPlayer.Stop();
+            StopKey.IsChecked = true;
         }
     }
 
-    private void StopButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    private void StopKey_Checked(object sender, RoutedEventArgs e)
     {
-        if (((System.Windows.Controls.Button)sender).Tag is not FooterButtonScope.ProjectWide)
-            return;
-
-        StopAudio();
+        OnTransportSwitched();
+        _generatedAudioPlayer.Pause();
     }
 
     private void AboutOpenInstallLocation_Click(object sender, RoutedEventArgs e)
