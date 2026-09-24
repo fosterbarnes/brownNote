@@ -2,67 +2,56 @@ using NAudio.Wave;
 
 namespace brownNote.Audio;
 
-public sealed class BrownNoiseProvider : ISampleProvider
+public sealed class NoiseChannel : ISampleProvider
 {
     public const int SampleRate = 48000;
     public const int Channels = 2;
     public const int MinimumNoiseDensity = 1;
     public const int MaximumNoiseDensity = 12;
     public const float MaximumOutputGain = 10f;
+    public const float DefaultHighPassCutoff = 17f;
+    public const float DefaultLowPassCutoff = 120f;
+    public const int DefaultNoiseDensity = 4;
 
     private const float BaseOutputGain = 3.5f;
     private const float MinimumCutoff = 1f;
     private const float CoefficientTransition = 0.002f;
     private const float LowPassVariation = 0.05f;
     private const float HighPassVariation = 0.03f;
-    private const float IntegratorVariation = 0.05f;
+    private const float ColorVariation = 0.05f;
     private const float GainVariation = 0.01f;
     private const float FadeInSeconds = 1.5f;
     private const float FadeOutSeconds = 2.5f;
     private const float FadeInStep = 1f / (FadeInSeconds * SampleRate);
     private const float FadeOutStep = 1f / (FadeOutSeconds * SampleRate);
 
+    private readonly NoiseColorFilter _filter;
     private readonly Random[] _randoms = new Random[MaximumNoiseDensity];
     private readonly float[] _voiceGains = new float[MaximumNoiseDensity];
     private readonly float[] _highPassVariations = new float[MaximumNoiseDensity];
     private readonly float[] _lowPassVariations = new float[MaximumNoiseDensity];
-    private readonly float[] _integratorVariations = new float[MaximumNoiseDensity];
-    private readonly float[] _brown = new float[MaximumNoiseDensity];
+    private readonly float[] _colorVariations = new float[MaximumNoiseDensity];
     private readonly float[] _highPassInputs = new float[MaximumNoiseDensity];
     private readonly float[] _highPassOutputs = new float[MaximumNoiseDensity];
     private readonly float[] _lowPassOutputs = new float[MaximumNoiseDensity];
-    private FilterSettings[] _targetSettings = new FilterSettings[MaximumNoiseDensity];
-    private int _noiseDensity;
-    private readonly float[] _integratorCoefficients = new float[MaximumNoiseDensity];
+    private readonly ColorCoefficients[] _colorCoefficients = new ColorCoefficients[MaximumNoiseDensity];
     private readonly float[] _highPassCoefficients = new float[MaximumNoiseDensity];
     private readonly float[] _lowPassCoefficients = new float[MaximumNoiseDensity];
-    private readonly AudioTap? _tap;
+    private FilterSettings[] _targetSettings = new FilterSettings[MaximumNoiseDensity];
+    private float _highPassCutoff = DefaultHighPassCutoff;
+    private float _lowPassCutoff = DefaultLowPassCutoff;
+    private float _colorness;
+    private int _noiseDensity = DefaultNoiseDensity;
     private float _outputGain = 1f;
     private float _currentSample;
     private int _channelPosition;
     private float _fadePosition;
-    private volatile bool _fadingIn = true;
-    private bool _fadedOutRaised;
+    private int _renderedVoiceCount = DefaultNoiseDensity;
+    private volatile bool _fadingIn;
 
-    public event Action? FadedOut;
-
-    public BrownNoiseProvider(
-        float highPassCutoff,
-        float lowPassCutoff,
-        float integratorCutoff,
-        int noiseDensity,
-        AudioTap? tap = null)
+    public NoiseChannel(NoiseColor color)
     {
-        _tap = tap;
-        ValidateCutoff(highPassCutoff, nameof(highPassCutoff));
-        ValidateCutoff(lowPassCutoff, nameof(lowPassCutoff));
-        ValidateCutoff(integratorCutoff, nameof(integratorCutoff));
-        ValidateNoiseDensity(noiseDensity);
-        if (highPassCutoff >= lowPassCutoff)
-        {
-            throw new ArgumentException("The high-pass cutoff must be below the low-pass cutoff.");
-        }
-
+        _filter = NoiseColorFilter.Create(color);
         var variationRandom = new Random();
         for (var index = 0; index < MaximumNoiseDensity; index++)
         {
@@ -74,17 +63,16 @@ public sealed class BrownNoiseProvider : ISampleProvider
             _lowPassVariations[index] = index == 0
                 ? 0f
                 : NextVariation(variationRandom, LowPassVariation);
-            _integratorVariations[index] = index == 0
+            _colorVariations[index] = index == 0
                 ? 0f
-                : NextVariation(variationRandom, IntegratorVariation);
+                : NextVariation(variationRandom, ColorVariation);
         }
 
-        _noiseDensity = noiseDensity;
-        UpdateTargetSettings(highPassCutoff, lowPassCutoff, integratorCutoff);
+        UpdateTargetSettings();
         for (var index = 0; index < MaximumNoiseDensity; index++)
         {
             var settings = _targetSettings[index];
-            _integratorCoefficients[index] = settings.IntegratorCoefficient;
+            _colorCoefficients[index] = settings.Color;
             _highPassCoefficients[index] = settings.HighPassCoefficient;
             _lowPassCoefficients[index] = settings.LowPassCoefficient;
         }
@@ -92,6 +80,8 @@ public sealed class BrownNoiseProvider : ISampleProvider
     }
 
     public WaveFormat WaveFormat { get; }
+
+    public bool IsSilent => !_fadingIn && _fadePosition == 0f;
 
     public float OutputGain
     {
@@ -107,82 +97,112 @@ public sealed class BrownNoiseProvider : ISampleProvider
         }
     }
 
-    public bool IsFadingOut => !_fadingIn;
-
-    public void FadeIn()
+    public int NoiseDensity
     {
-        _fadingIn = true;
+        get => Volatile.Read(ref _noiseDensity);
+        set
+        {
+            if (value is < MinimumNoiseDensity or > MaximumNoiseDensity)
+            {
+                throw new ArgumentOutOfRangeException(nameof(value));
+            }
+
+            Volatile.Write(ref _noiseDensity, value);
+        }
     }
 
-    public void FadeOut()
+    public float HighPassCutoff
     {
-        _fadingIn = false;
+        get => _highPassCutoff;
+        set => UpdateCutoffs(value, _lowPassCutoff, _colorness);
     }
 
-    public void UpdateCutoffs(float highPassCutoff, float lowPassCutoff, float integratorCutoff)
+    public float LowPassCutoff
+    {
+        get => _lowPassCutoff;
+        set => UpdateCutoffs(_highPassCutoff, value, _colorness);
+    }
+
+    public float Colorness
+    {
+        get => _colorness;
+        set => UpdateCutoffs(_highPassCutoff, _lowPassCutoff, value);
+    }
+
+    public void UpdateCutoffs(float highPassCutoff, float lowPassCutoff, float colorness)
     {
         ValidateCutoff(highPassCutoff, nameof(highPassCutoff));
         ValidateCutoff(lowPassCutoff, nameof(lowPassCutoff));
-        ValidateCutoff(integratorCutoff, nameof(integratorCutoff));
+        if (float.IsNaN(colorness) || colorness is < 0f or > 100f)
+        {
+            throw new ArgumentOutOfRangeException(nameof(colorness));
+        }
         if (highPassCutoff >= lowPassCutoff)
         {
             throw new ArgumentException("The high-pass cutoff must be below the low-pass cutoff.");
         }
 
-        UpdateTargetSettings(highPassCutoff, lowPassCutoff, integratorCutoff);
+        _highPassCutoff = highPassCutoff;
+        _lowPassCutoff = lowPassCutoff;
+        _colorness = colorness;
+        UpdateTargetSettings();
     }
 
-    public void UpdateNoiseDensity(int noiseDensity)
+    public void FadeIn() => _fadingIn = true;
+
+    public void FadeOut() => _fadingIn = false;
+
+    // Only call while no output device is reading this channel.
+    public void Silence()
     {
-        ValidateNoiseDensity(noiseDensity);
-        Volatile.Write(ref _noiseDensity, noiseDensity);
+        _fadingIn = false;
+        _fadePosition = 0f;
     }
 
     public int Read(Span<float> buffer)
     {
+        if (IsSilent)
+        {
+            ActivateVoices(Volatile.Read(ref _noiseDensity));
+            buffer.Clear();
+            return buffer.Length;
+        }
+
         for (var index = 0; index < buffer.Length; index++)
         {
             if (_channelPosition == 0)
             {
                 var noiseDensity = Volatile.Read(ref _noiseDensity);
+                ActivateVoices(noiseDensity);
                 var sample = 0f;
                 for (var voice = 0; voice < noiseDensity; voice++)
                 {
                     var settings = Volatile.Read(ref _targetSettings)[voice];
-                    _integratorCoefficients[voice] = MoveTowards(
-                        _integratorCoefficients[voice], settings.IntegratorCoefficient);
+                    _colorCoefficients[voice] = MoveTowards(_colorCoefficients[voice], settings.Color);
                     _highPassCoefficients[voice] = MoveTowards(
                         _highPassCoefficients[voice], settings.HighPassCoefficient);
                     _lowPassCoefficients[voice] = MoveTowards(
                         _lowPassCoefficients[voice], settings.LowPassCoefficient);
 
                     var white = _randoms[voice].NextSingle() * 2f - 1f;
-                    _brown[voice] = _integratorCoefficients[voice] * _brown[voice] +
-                        (1f - _integratorCoefficients[voice]) * white;
+                    var baseSample = _filter.Next(voice, white, _colorCoefficients[voice]);
 
                     var highPass = _highPassCoefficients[voice] *
-                        (_highPassOutputs[voice] + _brown[voice] - _highPassInputs[voice]);
-                    _highPassInputs[voice] = _brown[voice];
+                        (_highPassOutputs[voice] + baseSample - _highPassInputs[voice]);
+                    _highPassInputs[voice] = baseSample;
                     _highPassOutputs[voice] = highPass;
                     _lowPassOutputs[voice] += _lowPassCoefficients[voice] *
                         (highPass - _lowPassOutputs[voice]);
                     sample += _lowPassOutputs[voice] * _voiceGains[voice];
                 }
 
-                if (_fadingIn)
-                {
-                    _fadePosition = MathF.Min(1f, _fadePosition + FadeInStep);
-                    _fadedOutRaised = false;
-                }
-                else
-                {
-                    _fadePosition = MathF.Max(0f, _fadePosition - FadeOutStep);
-                }
+                _fadePosition = _fadingIn
+                    ? MathF.Min(1f, _fadePosition + FadeInStep)
+                    : MathF.Max(0f, _fadePosition - FadeOutStep);
 
                 var fadeGain = _fadePosition * _fadePosition * _fadePosition;
                 _currentSample = sample * BaseOutputGain * Volatile.Read(ref _outputGain) * fadeGain /
                     MathF.Sqrt(noiseDensity);
-                _tap?.Write(_currentSample);
                 _channelPosition = 1;
             }
             else
@@ -193,45 +213,48 @@ public sealed class BrownNoiseProvider : ISampleProvider
             buffer[index] = _currentSample;
         }
 
-        if (!_fadingIn && _fadePosition == 0f && !_fadedOutRaised)
-        {
-            _fadedOutRaised = true;
-            FadedOut?.Invoke();
-        }
-
         return buffer.Length;
     }
 
-    private static float GetPoleCoefficient(float cutoff)
+    private void ActivateVoices(int noiseDensity)
+    {
+        if (noiseDensity > _renderedVoiceCount)
+        {
+            for (var voice = _renderedVoiceCount; voice < noiseDensity; voice++)
+            {
+                ResetVoice(voice);
+            }
+        }
+
+        _renderedVoiceCount = noiseDensity;
+    }
+
+    private void ResetVoice(int voice)
+    {
+        _filter.ResetVoice(voice);
+        _highPassInputs[voice] = 0;
+        _highPassOutputs[voice] = 0;
+        _lowPassOutputs[voice] = 0;
+    }
+
+    internal static float GetPoleCoefficient(float cutoff)
     {
         return MathF.Exp(-2f * MathF.PI * cutoff / SampleRate);
     }
 
-    private static FilterSettings CreateSettings(
-        float highPassCutoff,
-        float lowPassCutoff,
-        float integratorCutoff)
-    {
-        return new FilterSettings(
-            GetPoleCoefficient(highPassCutoff),
-            1f - GetPoleCoefficient(lowPassCutoff),
-            GetPoleCoefficient(integratorCutoff));
-    }
-
-    private void UpdateTargetSettings(
-        float highPassCutoff,
-        float lowPassCutoff,
-        float integratorCutoff)
+    private void UpdateTargetSettings()
     {
         var targetSettings = new FilterSettings[MaximumNoiseDensity];
         for (var index = 0; index < MaximumNoiseDensity; index++)
         {
-            var highPass = highPassCutoff * (1f + _highPassVariations[index]);
-            var lowPass = lowPassCutoff * (1f + _lowPassVariations[index]);
-            var integrator = integratorCutoff * (1f + _integratorVariations[index]);
+            var highPass = _highPassCutoff * (1f + _highPassVariations[index]);
+            var lowPass = _lowPassCutoff * (1f + _lowPassVariations[index]);
 
             highPass = MathF.Max(MinimumCutoff, MathF.Min(highPass, lowPass - MinimumCutoff));
-            targetSettings[index] = CreateSettings(highPass, lowPass, integrator);
+            targetSettings[index] = new FilterSettings(
+                GetPoleCoefficient(highPass),
+                1f - GetPoleCoefficient(lowPass),
+                _filter.GetCoefficients(_colorness, _colorVariations[index]));
         }
 
         Volatile.Write(ref _targetSettings, targetSettings);
@@ -247,6 +270,11 @@ public sealed class BrownNoiseProvider : ISampleProvider
         return current + (target - current) * CoefficientTransition;
     }
 
+    private static ColorCoefficients MoveTowards(ColorCoefficients current, ColorCoefficients target) => new(
+        MoveTowards(current.First, target.First),
+        MoveTowards(current.Second, target.Second),
+        MoveTowards(current.Gain, target.Gain));
+
     private static void ValidateCutoff(float cutoff, string parameterName)
     {
         if (float.IsNaN(cutoff) || cutoff < MinimumCutoff || cutoff > SampleRate / 2f)
@@ -255,16 +283,8 @@ public sealed class BrownNoiseProvider : ISampleProvider
         }
     }
 
-    private static void ValidateNoiseDensity(int noiseDensity)
-    {
-        if (noiseDensity is < MinimumNoiseDensity or > MaximumNoiseDensity)
-        {
-            throw new ArgumentOutOfRangeException(nameof(noiseDensity));
-        }
-    }
-
     private sealed record FilterSettings(
         float HighPassCoefficient,
         float LowPassCoefficient,
-        float IntegratorCoefficient);
+        ColorCoefficients Color);
 }

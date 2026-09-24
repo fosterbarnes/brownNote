@@ -4,6 +4,7 @@
         xmlns:local="clr-namespace:brownNote"
         xmlns:helpers="clr-namespace:brownNote.Helpers"
         xmlns:controls="clr-namespace:brownNote.Controls"
+        xmlns:audio="clr-namespace:brownNote.Audio"
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
         Title="brownNote"
         Width="650"
@@ -26,6 +27,45 @@
             <Setter Property="MinWidth" Value="48" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="TextAlignment" Value="Right" />
+            <EventSetter Event="PreviewMouseLeftButtonDown" Handler="ValueEditor_PreviewMouseLeftButtonDown" />
+            <Style.Triggers>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Foreground" Value="{StaticResource TertiaryTextBrush}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="BoundsEditorStyle"
+               TargetType="TextBox"
+               BasedOn="{StaticResource AudioValueEditorStyle}">
+            <Setter Property="MinWidth" Value="84" />
+            <Setter Property="Padding" Value="2,3" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}" />
+            <EventSetter Event="GotFocus" Handler="AudioValueEditor_GotFocus" />
+            <EventSetter Event="LostFocus" Handler="BoundsEditor_LostFocus" />
+            <EventSetter Event="PreviewKeyDown" Handler="BoundsEditor_PreviewKeyDown" />
+        </Style>
+        <Style x:Key="BoundsLabelStyle" TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,6" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{StaticResource SecondaryTextBrush}" />
+            <Style.Triggers>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Foreground" Value="{StaticResource TertiaryTextBrush}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="BoundsDashStyle" TargetType="TextBlock">
+            <Setter Property="Margin" Value="8,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{StaticResource SecondaryTextBrush}" />
+            <Setter Property="Text" Value="-" />
+            <Style.Triggers>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Foreground" Value="{StaticResource TertiaryTextBrush}" />
+                </Trigger>
+            </Style.Triggers>
         </Style>
     </Window.Resources>
     <Grid Margin="{StaticResource PageMargin}">
@@ -38,11 +78,16 @@
                     Grid.Row="0"
                     SelectionChanged="ModeTabs_SelectionChanged"
                     SizeChanged="ModeTabs_SizeChanged">
-            <TabItem Header="Noise Machine" />
-            <TabItem Header="About" />
+            <TabItem Header="Brown Noise" Tag="{x:Static audio:NoiseColor.Brown}" />
+            <TabItem Header="Green Noise" Tag="{x:Static audio:NoiseColor.Green}" />
+            <TabItem Header="White Noise" Tag="{x:Static audio:NoiseColor.White}" />
+            <TabItem Header="Settings" Tag="Settings" />
+            <TabItem Header="About" Tag="About" />
         </TabControl>
         <Grid Grid.Row="1">
             <Border x:Name="AboutPage"
+                    Opacity="0"
+                    Visibility="Collapsed"
                     Style="{StaticResource ContentPanelStyle}">
                 <Grid HorizontalAlignment="Stretch"
                       VerticalAlignment="Center">
@@ -67,6 +112,21 @@
                         <TextBlock x:Name="AboutVersionText"
                                    Margin="0,2,0,10"
                                    Foreground="{StaticResource SecondaryTextBrush}" />
+                        <TextBlock Margin="0,0,0,4"
+                                   TextWrapping="Wrap"
+                                   Foreground="{StaticResource SecondaryTextBrush}">
+                            <Run Text="Inspired by Jason Lewis's " />
+                            <Hyperlink Style="{StaticResource AboutHyperlinkStyle}"
+                                       NavigateUri="https://www.youtube.com/watch?v=RqzGzwTY-6w"
+                                       RequestNavigate="AboutHyperlink_RequestNavigate">
+                                '8 hour deep brown noise'
+                            </Hyperlink>
+                            <Run Text=" videos" />
+                        </TextBlock>
+                        <TextBlock Margin="0,0,0,10"
+                                   TextWrapping="Wrap"
+                                   Foreground="{StaticResource SecondaryTextBrush}"
+                                   Text="Pre-Release. Bugs and incomplete features expected." />
                         <TextBlock Margin="0,0,0,4">
                             <Hyperlink Style="{StaticResource AboutHyperlinkStyle}"
                                        NavigateUri="https://github.com/fosterbarnes/brownNote"
@@ -144,7 +204,165 @@
                     </StackPanel>
                 </Grid>
             </Border>
-            <Grid x:Name="GeneratedAudioPage"
+            <StackPanel x:Name="SettingsPage"
+                        VerticalAlignment="Top"
+                        Opacity="0"
+                        Visibility="Collapsed">
+            <Border Style="{StaticResource ContentPanelStyle}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="BoundsEditorsPanel">
+                        <TextBlock Margin="0,0,0,12"
+                                   FontWeight="SemiBold"
+                                   Text="Frequency Ranges" />
+                        <Grid Margin="0,0,0,14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="220" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Border Grid.RowSpan="4"
+                                    Width="3"
+                                    Margin="0,0,12,0"
+                                    CornerRadius="1"
+                                    Background="{StaticResource BrownKeyAccentBrush}" />
+                            <Button Grid.Column="6"
+                                    Grid.RowSpan="4"
+                                    VerticalAlignment="Center"
+                                    Margin="0"
+                                    Content="Reset"
+                                    Tag="{x:Static audio:NoiseColor.Brown}"
+                                    Click="ResetBounds_Click"
+                                    Style="{StaticResource NeutralButtonStyle}" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource BoundsLabelStyle}" Text="Output Gain Range" />
+                            <TextBox Grid.Row="0" Grid.Column="2" Style="{StaticResource BoundsEditorStyle}" Tag="Brown/GainMin" />
+                            <TextBlock Grid.Row="0" Grid.Column="3" Style="{StaticResource BoundsDashStyle}" />
+                            <TextBox Grid.Row="0" Grid.Column="4" Style="{StaticResource BoundsEditorStyle}" Tag="Brown/GainMax" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource BoundsLabelStyle}" Text="Low-Pass Range" />
+                            <TextBox Grid.Row="1" Grid.Column="2" Style="{StaticResource BoundsEditorStyle}" Tag="Brown/LowPassMin" />
+                            <TextBlock Grid.Row="1" Grid.Column="3" Style="{StaticResource BoundsDashStyle}" />
+                            <TextBox Grid.Row="1" Grid.Column="4" Style="{StaticResource BoundsEditorStyle}" Tag="Brown/LowPassMax" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" Style="{StaticResource BoundsLabelStyle}" Text="High-Pass Range" />
+                            <TextBox Grid.Row="2" Grid.Column="2" Style="{StaticResource BoundsEditorStyle}" Tag="Brown/HighPassMin" />
+                            <TextBlock Grid.Row="2" Grid.Column="3" Style="{StaticResource BoundsDashStyle}" />
+                            <TextBox Grid.Row="2" Grid.Column="4" Style="{StaticResource BoundsEditorStyle}" Tag="Brown/HighPassMax" />
+                            <TextBlock Grid.Row="3" Grid.Column="1" Style="{StaticResource BoundsLabelStyle}" Text="Brownness Range" />
+                            <TextBox Grid.Row="3" Grid.Column="2" Style="{StaticResource BoundsEditorStyle}" Tag="Brown/ColornessMin" />
+                            <TextBlock Grid.Row="3" Grid.Column="3" Style="{StaticResource BoundsDashStyle}" />
+                            <TextBox Grid.Row="3" Grid.Column="4" Style="{StaticResource BoundsEditorStyle}" Tag="Brown/ColornessMax" />
+                        </Grid>
+                        <Grid Margin="0,0,0,14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="220" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Border Grid.RowSpan="4"
+                                    Width="3"
+                                    Margin="0,0,12,0"
+                                    CornerRadius="1"
+                                    Background="{StaticResource GreenKeyAccentBrush}" />
+                            <Button Grid.Column="6"
+                                    Grid.RowSpan="4"
+                                    VerticalAlignment="Center"
+                                    Margin="0"
+                                    Content="Reset"
+                                    Tag="{x:Static audio:NoiseColor.Green}"
+                                    Click="ResetBounds_Click"
+                                    Style="{StaticResource NeutralButtonStyle}" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource BoundsLabelStyle}" Text="Output Gain Range" />
+                            <TextBox Grid.Row="0" Grid.Column="2" Style="{StaticResource BoundsEditorStyle}" Tag="Green/GainMin" />
+                            <TextBlock Grid.Row="0" Grid.Column="3" Style="{StaticResource BoundsDashStyle}" />
+                            <TextBox Grid.Row="0" Grid.Column="4" Style="{StaticResource BoundsEditorStyle}" Tag="Green/GainMax" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource BoundsLabelStyle}" Text="Low-Pass Range" />
+                            <TextBox Grid.Row="1" Grid.Column="2" Style="{StaticResource BoundsEditorStyle}" Tag="Green/LowPassMin" />
+                            <TextBlock Grid.Row="1" Grid.Column="3" Style="{StaticResource BoundsDashStyle}" />
+                            <TextBox Grid.Row="1" Grid.Column="4" Style="{StaticResource BoundsEditorStyle}" Tag="Green/LowPassMax" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" Style="{StaticResource BoundsLabelStyle}" Text="High-Pass Range" />
+                            <TextBox Grid.Row="2" Grid.Column="2" Style="{StaticResource BoundsEditorStyle}" Tag="Green/HighPassMin" />
+                            <TextBlock Grid.Row="2" Grid.Column="3" Style="{StaticResource BoundsDashStyle}" />
+                            <TextBox Grid.Row="2" Grid.Column="4" Style="{StaticResource BoundsEditorStyle}" Tag="Green/HighPassMax" />
+                            <TextBlock Grid.Row="3" Grid.Column="1" Style="{StaticResource BoundsLabelStyle}" Text="Greenness Range" />
+                            <TextBox Grid.Row="3" Grid.Column="2" Style="{StaticResource BoundsEditorStyle}" Tag="Green/ColornessMin" />
+                            <TextBlock Grid.Row="3" Grid.Column="3" Style="{StaticResource BoundsDashStyle}" />
+                            <TextBox Grid.Row="3" Grid.Column="4" Style="{StaticResource BoundsEditorStyle}" Tag="Green/ColornessMax" />
+                        </Grid>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="220" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Border Grid.RowSpan="4"
+                                    Width="3"
+                                    Margin="0,0,12,0"
+                                    CornerRadius="1"
+                                    Background="{StaticResource WhiteKeyAccentBrush}" />
+                            <Button Grid.Column="6"
+                                    Grid.RowSpan="4"
+                                    VerticalAlignment="Center"
+                                    Margin="0"
+                                    Content="Reset"
+                                    Tag="{x:Static audio:NoiseColor.White}"
+                                    Click="ResetBounds_Click"
+                                    Style="{StaticResource NeutralButtonStyle}" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource BoundsLabelStyle}" Text="Output Gain Range" />
+                            <TextBox Grid.Row="0" Grid.Column="2" Style="{StaticResource BoundsEditorStyle}" Tag="White/GainMin" />
+                            <TextBlock Grid.Row="0" Grid.Column="3" Style="{StaticResource BoundsDashStyle}" />
+                            <TextBox Grid.Row="0" Grid.Column="4" Style="{StaticResource BoundsEditorStyle}" Tag="White/GainMax" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource BoundsLabelStyle}" Text="Low-Pass Range" />
+                            <TextBox Grid.Row="1" Grid.Column="2" Style="{StaticResource BoundsEditorStyle}" Tag="White/LowPassMin" />
+                            <TextBlock Grid.Row="1" Grid.Column="3" Style="{StaticResource BoundsDashStyle}" />
+                            <TextBox Grid.Row="1" Grid.Column="4" Style="{StaticResource BoundsEditorStyle}" Tag="White/LowPassMax" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" Style="{StaticResource BoundsLabelStyle}" Text="High-Pass Range" />
+                            <TextBox Grid.Row="2" Grid.Column="2" Style="{StaticResource BoundsEditorStyle}" Tag="White/HighPassMin" />
+                            <TextBlock Grid.Row="2" Grid.Column="3" Style="{StaticResource BoundsDashStyle}" />
+                            <TextBox Grid.Row="2" Grid.Column="4" Style="{StaticResource BoundsEditorStyle}" Tag="White/HighPassMax" />
+                            <TextBlock Grid.Row="3" Grid.Column="1" Style="{StaticResource BoundsLabelStyle}" IsEnabled="False" Text="Whiteness Range" />
+                            <TextBox Grid.Row="3" Grid.Column="2" Style="{StaticResource BoundsEditorStyle}" IsEnabled="False" Tag="White/ColornessMin" />
+                            <TextBlock Grid.Row="3" Grid.Column="3" Style="{StaticResource BoundsDashStyle}" IsEnabled="False" />
+                            <TextBox Grid.Row="3" Grid.Column="4" Style="{StaticResource BoundsEditorStyle}" IsEnabled="False" Tag="White/ColornessMax" />
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+                <Button HorizontalAlignment="Right"
+                        Width="Auto"
+                        Margin="0,12,0,0"
+                        Content="Reset to Default"
+                        Click="ResetAllBounds_Click"
+                        Style="{StaticResource NeutralButtonStyle}" />
+            </StackPanel>
+            <Grid x:Name="NoiseMachinePage"
                   Opacity="0"
                   Visibility="Collapsed">
                 <Grid.RowDefinitions>
@@ -197,20 +415,20 @@
                                      PreviewKeyDown="AudioValueEditor_PreviewKeyDown">
                                 <TextBox.Text>
                                     <MultiBinding Converter="{StaticResource AudioMetricConverter}" Mode="OneWay">
-                                        <Binding ElementName="LowPassCutoffSlider" Path="Value" />
+                                        <Binding ElementName="LowPassCutoffSlider" Path="Frequency" />
                                         <Binding ElementName="LowPassCutoffSlider" Path="(helpers:SliderMetric.Metric)" />
                                     </MultiBinding>
                                 </TextBox.Text>
                             </TextBox>
                         </Grid>
-                        <Slider x:Name="LowPassCutoffSlider"
-                                Minimum="80"
-                                Maximum="24000"
-                                TickFrequency="1"
-                                IsSnapToTickEnabled="True"
-                                helpers:SliderMetric.Metric="{x:Static helpers:AudioMetric.Hertz}"
-                                Value="120"
-                                ValueChanged="LowPassCutoffSlider_ValueChanged" />
+                        <controls:LogSlider x:Name="LowPassCutoffSlider"
+                                            FrequencyMinimum="80"
+                                            FrequencyMaximum="24000"
+                                            Frequency="120"
+                                            helpers:SliderMetric.Metric="{x:Static helpers:AudioMetric.Hertz}"
+                                            FrequencyChanged="LowPassCutoffSlider_FrequencyChanged" />
+                        <controls:FrequencyScale Margin="0,2,0,0"
+                                                 Slider="{Binding ElementName=LowPassCutoffSlider}" />
                         <Grid Margin="0,18,0,8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition />
@@ -226,49 +444,50 @@
                                      PreviewKeyDown="AudioValueEditor_PreviewKeyDown">
                                 <TextBox.Text>
                                     <MultiBinding Converter="{StaticResource AudioMetricConverter}" Mode="OneWay">
-                                        <Binding ElementName="HighPassCutoffSlider" Path="Value" />
+                                        <Binding ElementName="HighPassCutoffSlider" Path="Frequency" />
                                         <Binding ElementName="HighPassCutoffSlider" Path="(helpers:SliderMetric.Metric)" />
                                     </MultiBinding>
                                 </TextBox.Text>
                             </TextBox>
                         </Grid>
-                        <Slider x:Name="HighPassCutoffSlider"
-                                Minimum="10"
-                                Maximum="1000"
-                                TickFrequency="1"
-                                IsSnapToTickEnabled="True"
-                                helpers:SliderMetric.Metric="{x:Static helpers:AudioMetric.Hertz}"
-                                Value="17"
-                                ValueChanged="HighPassCutoffSlider_ValueChanged" />
-                        <Grid Margin="0,18,0,8">
+                        <controls:LogSlider x:Name="HighPassCutoffSlider"
+                                            FrequencyMinimum="10"
+                                            FrequencyMaximum="1000"
+                                            Frequency="17"
+                                            helpers:SliderMetric.Metric="{x:Static helpers:AudioMetric.Hertz}"
+                                            FrequencyChanged="HighPassCutoffSlider_FrequencyChanged" />
+                        <controls:FrequencyScale Margin="0,2,0,0"
+                                                 Slider="{Binding ElementName=HighPassCutoffSlider}" />
+                        <Grid x:Name="ColornessControl"
+                              Margin="0,18,0,8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="Brownness" />
-                            <TextBox x:Name="BrownnessValueEditor"
+                            <TextBlock x:Name="ColornessLabel" Text="Brownness" />
+                            <TextBox x:Name="ColornessValueEditor"
                                      Grid.Column="1"
                                      Style="{StaticResource AudioValueEditorStyle}"
-                                     Tag="{Binding ElementName=BrownnessSlider}"
+                                     Tag="{Binding ElementName=ColornessSlider}"
                                      GotFocus="AudioValueEditor_GotFocus"
                                      LostFocus="AudioValueEditor_LostFocus"
                                      PreviewKeyDown="AudioValueEditor_PreviewKeyDown">
                                 <TextBox.Text>
                                     <MultiBinding Converter="{StaticResource AudioMetricConverter}" Mode="OneWay">
-                                        <Binding ElementName="BrownnessSlider" Path="Value" />
-                                        <Binding ElementName="BrownnessSlider" Path="(helpers:SliderMetric.Metric)" />
+                                        <Binding ElementName="ColornessSlider" Path="Value" />
+                                        <Binding ElementName="ColornessSlider" Path="(helpers:SliderMetric.Metric)" />
                                     </MultiBinding>
                                 </TextBox.Text>
                             </TextBox>
                         </Grid>
-                        <Slider x:Name="BrownnessSlider"
+                        <Slider x:Name="ColornessSlider"
                                 Minimum="0"
                                 Maximum="100"
                                 TickFrequency="1"
                                 IsSnapToTickEnabled="True"
                                 helpers:SliderMetric.Metric="{x:Static helpers:AudioMetric.WholePercentage}"
                                 Value="67"
-                                ValueChanged="BrownnessSlider_ValueChanged" />
+                                ValueChanged="ColornessSlider_ValueChanged" />
                         <Grid Margin="0,18,0,8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition />
@@ -327,13 +546,30 @@
         </Grid>
         <Border Grid.Row="2"
                 Margin="0,14,0,0"
-                Padding="8"
                 HorizontalAlignment="Center"
-                CornerRadius="8"
-                Background="#1F1F1F"
-                BorderBrush="#2A2A2A"
-                BorderThickness="1">
+                Style="{StaticResource TransportPanelStyle}">
             <StackPanel Orientation="Horizontal">
+                <ToggleButton x:Name="BrownKey"
+                              ToolTip="Brown"
+                              Tag="{x:Static audio:NoiseColor.Brown}"
+                              Background="{StaticResource BrownKeyBrush}"
+                              helpers:KeyAccent.Brush="{StaticResource BrownKeyAccentBrush}"
+                              Click="ColorKey_Click"
+                              Style="{StaticResource TransportKeyBaseStyle}" />
+                <ToggleButton x:Name="GreenKey"
+                              ToolTip="Green"
+                              Tag="{x:Static audio:NoiseColor.Green}"
+                              Background="{StaticResource GreenKeyBrush}"
+                              helpers:KeyAccent.Brush="{StaticResource GreenKeyAccentBrush}"
+                              Click="ColorKey_Click"
+                              Style="{StaticResource TransportKeyBaseStyle}" />
+                <ToggleButton x:Name="WhiteKey"
+                              ToolTip="White"
+                              Tag="{x:Static audio:NoiseColor.White}"
+                              Background="{StaticResource WhiteKeyBrush}"
+                              helpers:KeyAccent.Brush="{StaticResource WhiteKeyAccentBrush}"
+                              Click="ColorKey_Click"
+                              Style="{StaticResource TransportKeyBaseStyle}" />
                 <RadioButton x:Name="StopKey"
                              GroupName="Transport"
                              ToolTip="Stop"
@@ -355,3 +591,4 @@
         </Border>
     </Grid>
 </Window>
+

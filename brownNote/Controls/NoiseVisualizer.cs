@@ -16,7 +16,7 @@ public enum VisualizerMode
 
 public sealed class NoiseVisualizer : FrameworkElement
 {
-    private const int SampleRate = BrownNoiseProvider.SampleRate;
+    private const int SampleRate = NoiseChannel.SampleRate;
     private const double LevelTimeConstant = 0.35;
     private const int ScopeWindow = SampleRate / 10;
     private const int FftExponent = 13;
@@ -27,6 +27,8 @@ public sealed class NoiseVisualizer : FrameworkElement
     private const double SpectrumCeiling = 0;
     private const double SpectrumTimeConstant = 0.12;
     private const double ResponseFloor = -60;
+    private const double ResponseTimeConstant = 0.06;
+    private const double ResponseSettledDb = 0.05;
     private const double MeterFloor = -60;
     private const double MeterCeiling = 6;
     private const int MeterWindow = SampleRate / 20;
@@ -57,8 +59,12 @@ public sealed class NoiseVisualizer : FrameworkElement
     private double _peakDb = MeterFloor;
     private double _holdDb = MeterFloor;
     private double _holdTime;
-    private double _highPassCutoff = GeneratedAudioPlayer.DefaultHighPassCutoff;
-    private double _lowPassCutoff = GeneratedAudioPlayer.DefaultLowPassCutoff;
+    private NoiseColor _color = NoiseColor.Brown;
+    private double _colorness = BrownNoiseFilter.DefaultColorness;
+    private double[] _responseDb = [];
+    private bool _responseSettling;
+    private double _highPassCutoff = NoiseChannel.DefaultHighPassCutoff;
+    private double _lowPassCutoff = NoiseChannel.DefaultLowPassCutoff;
 
     public NoiseVisualizer()
     {
@@ -69,6 +75,16 @@ public sealed class NoiseVisualizer : FrameworkElement
     }
 
     public AudioTap? Tap { get; set; }
+
+    public NoiseColor Color
+    {
+        get => _color;
+        set
+        {
+            _color = value;
+            InvalidateResponse();
+        }
+    }
 
     public VisualizerMode Mode
     {
@@ -96,7 +112,17 @@ public sealed class NoiseVisualizer : FrameworkElement
         set
         {
             _highPassCutoff = value;
-            InvalidateVisual();
+            InvalidateResponse();
+        }
+    }
+
+    public double Colorness
+    {
+        get => _colorness;
+        set
+        {
+            _colorness = value;
+            InvalidateResponse();
         }
     }
 
@@ -106,13 +132,20 @@ public sealed class NoiseVisualizer : FrameworkElement
         set
         {
             _lowPassCutoff = value;
-            InvalidateVisual();
+            InvalidateResponse();
         }
+    }
+
+    private void InvalidateResponse()
+    {
+        _responseSettling = true;
+        UpdateRenderingSubscription();
+        InvalidateVisual();
     }
 
     private void UpdateRenderingSubscription()
     {
-        SetRendering(IsVisible && (_isActive || _level > 0));
+        SetRendering(IsVisible && (_isActive || _level > 0 || _responseSettling));
     }
 
     private void SetRendering(bool enabled)
@@ -144,8 +177,10 @@ public sealed class NoiseVisualizer : FrameworkElement
         if (!_isActive && _level < 0.002)
         {
             _level = 0;
-            SetRendering(false);
         }
+
+        AdvanceResponse(elapsed);
+        UpdateRenderingSubscription();
 
         if (Tap is not null)
         {
@@ -161,6 +196,54 @@ public sealed class NoiseVisualizer : FrameworkElement
         }
 
         InvalidateVisual();
+    }
+
+    private int ResponseColumns => Math.Max(1, (int)Math.Ceiling(ActualWidth));
+
+    private double TargetResponseDb(int column, int columns)
+    {
+        var frequency = FrequencyAt(column, columns);
+        var highPass = frequency / Math.Sqrt(frequency * frequency + _highPassCutoff * _highPassCutoff);
+        var lowPass = 1 / Math.Sqrt(1 + Math.Pow(frequency / _lowPassCutoff, 2));
+        var color = NoiseColorFilter.Response(_color, _colorness, frequency);
+        return 20 * Math.Log10(Math.Max(color * highPass * lowPass, 1e-12));
+    }
+
+    // Blending in decibels per column lets the curve morph between colors whose filter shapes differ.
+    private void AdvanceResponse(double elapsed)
+    {
+        if (!_responseSettling)
+            return;
+
+        var columns = ResponseColumns;
+        if (_responseDb.Length != columns + 1)
+        {
+            _responseDb = new double[columns + 1];
+            for (var column = 0; column <= columns; column++)
+            {
+                _responseDb[column] = TargetResponseDb(column, columns);
+            }
+            _responseSettling = false;
+            return;
+        }
+
+        var amount = Smoothing(elapsed, ResponseTimeConstant);
+        var settled = true;
+        for (var column = 0; column <= columns; column++)
+        {
+            var target = TargetResponseDb(column, columns);
+            var next = _responseDb[column] + (target - _responseDb[column]) * amount;
+            if (Math.Abs(target - next) > ResponseSettledDb)
+            {
+                settled = false;
+            }
+            else
+            {
+                next = target;
+            }
+            _responseDb[column] = next;
+        }
+        _responseSettling = !settled;
     }
 
     private void AdvancePlayhead(AudioTap tap, double elapsed)
@@ -414,13 +497,11 @@ public sealed class NoiseVisualizer : FrameworkElement
         var response = new StreamGeometry();
         using (var context = response.Open())
         {
-            var columns = Math.Max(1, (int)Math.Ceiling(width));
+            var columns = ResponseColumns;
+            var blended = _responseDb.Length == columns + 1;
             for (var column = 0; column <= columns; column++)
             {
-                var frequency = FrequencyAt(column, columns);
-                var highPass = frequency / Math.Sqrt(frequency * frequency + _highPassCutoff * _highPassCutoff);
-                var lowPass = 1 / Math.Sqrt(1 + Math.Pow(frequency / _lowPassCutoff, 2));
-                var decibels = 20 * Math.Log10(Math.Max(highPass * lowPass, 1e-12));
+                var decibels = blended ? _responseDb[column] : TargetResponseDb(column, columns);
                 var y = height * 0.1 + Math.Clamp(decibels / ResponseFloor, 0, 1) * height * 0.9;
                 var point = new Point(column * width / columns, y);
                 if (column == 0)

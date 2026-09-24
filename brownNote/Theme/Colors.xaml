@@ -16,5 +16,12 @@
     <SolidColorBrush x:Key="TertiaryTextBrush" Color="#CCCCCC" />
     <SolidColorBrush x:Key="FocusBrush" Color="#AC98C7" />
     <SolidColorBrush x:Key="ClipBrush" Color="#B8444A" />
+    <SolidColorBrush x:Key="TransportKeyBrush" Color="#5C5C5C" />
+    <SolidColorBrush x:Key="BrownKeyBrush" Color="#5A453B" />
+    <SolidColorBrush x:Key="GreenKeyBrush" Color="#354437" />
+    <SolidColorBrush x:Key="WhiteKeyBrush" Color="#8A8886" />
+    <SolidColorBrush x:Key="BrownKeyAccentBrush" Color="#9A7256" />
+    <SolidColorBrush x:Key="GreenKeyAccentBrush" Color="#5E8F62" />
+    <SolidColorBrush x:Key="WhiteKeyAccentBrush" Color="#CFCCC6" />
 
 </ResourceDictionary>

@@ -7,8 +7,8 @@ Brown noise machine app. Windows only. C# .NET 10 WPF
 <table border="0">
 <tbody>
 <tr>
-<td valign="top"><a href="https://github.com/fosterbarnes/brownNote/releases/download/v0.1.0/brownNote_v0.1.0_windows-x64.zip"><img src="https://raw.githubusercontent.com/fosterbarnes/res/main/btn/x64Portable.svg" width="180" height="auto" alt="Windows x64 portable ZIP"/></a></td>
-<td valign="top"><a href="https://github.com/fosterbarnes/brownNote/releases/download/v0.1.0/brownNote_v0.1.0_windows-arm64.zip"><img src="https://raw.githubusercontent.com/fosterbarnes/res/main/btn/arm64Portable.svg" width="180" height="auto" alt="Windows ARM64 portable ZIP"/></a></td>
+<td valign="top"><a href="https://github.com/fosterbarnes/brownNote/releases/download/v0.2.0/brownNote_v0.2.0_windows-x64.zip"><img src="https://raw.githubusercontent.com/fosterbarnes/res/main/btn/x64Portable.svg" width="180" height="auto" alt="Windows x64 portable ZIP"/></a></td>
+<td valign="top"><a href="https://github.com/fosterbarnes/brownNote/releases/download/v0.2.0/brownNote_v0.2.0_windows-arm64.zip"><img src="https://raw.githubusercontent.com/fosterbarnes/res/main/btn/arm64Portable.svg" width="180" height="auto" alt="Windows ARM64 portable ZIP"/></a></td>
 </tr>
 </tbody>
 </table>

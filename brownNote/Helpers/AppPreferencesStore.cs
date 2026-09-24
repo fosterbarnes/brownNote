@@ -21,18 +21,9 @@ internal static class AppPreferencesStore
             var preferences = JsonSerializer.Deserialize<AppPreferences>(File.ReadAllText(_path));
             return preferences?.Normalize() ?? AppPreferences.Defaults;
         }
-        catch (JsonException)
-        {
-            return AppPreferences.Defaults;
-        }
-        catch (IOException)
-        {
-            return AppPreferences.Defaults;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return AppPreferences.Defaults;
-        }
+        catch (JsonException) { return AppPreferences.Defaults; }
+        catch (IOException) { return AppPreferences.Defaults; }
+        catch (UnauthorizedAccessException) { return AppPreferences.Defaults; }
     }
 
     public static void Save(AppPreferences preferences)
@@ -42,32 +33,55 @@ internal static class AppPreferencesStore
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
             File.WriteAllText(_path, JsonSerializer.Serialize(preferences.Normalize()));
         }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
+        catch (IOException){}
+        catch (UnauthorizedAccessException){}
     }
 }
 
 internal sealed record AppPreferences(
-    int SelectedTab,
-    double GeneratedVolume,
-    int NoiseDensity,
-    double LowPassCutoff,
-    double HighPassCutoff,
-    double Brownness,
-    int VisualizerMode = 0)
+    string? SelectedPage = null,
+    int VisualizerMode = 0,
+    NoiseSettings? BrownNoise = null,
+    NoiseSettings? WhiteNoise = null,
+    NoiseSettings? GreenNoise = null,
+    NoiseColor[]? SelectedColors = null)
 {
-    public static AppPreferences Defaults { get; } = new(0, 1, 4, 120, 17, 67, 0);
+    public const string SettingsPage = "Settings";
+    public const string AboutPage = "About";
+
+    public static AppPreferences Defaults { get; } = new(nameof(NoiseColor.Brown), SelectedColors: [NoiseColor.Brown]);
+
+    public NoiseSettings GetNoiseSettings(NoiseColor color) =>
+        (GetValidSettings(color switch
+        {
+            NoiseColor.White => WhiteNoise,
+            NoiseColor.Green => GreenNoise,
+            _ => BrownNoise
+        }) ?? NoiseSettings.Defaults(color)).Normalize();
+
+    public AppPreferences WithNoiseSettings(NoiseColor color, NoiseSettings settings) => color switch
+    {
+        NoiseColor.White => this with { WhiteNoise = settings },
+        NoiseColor.Green => this with { GreenNoise = settings },
+        _ => this with { BrownNoise = settings }
+    };
 
     public AppPreferences Normalize() => new(
-        Math.Clamp(SelectedTab, 0, 1),
-        Math.Clamp(GeneratedVolume, 0, BrownNoiseProvider.MaximumOutputGain),
-        Math.Clamp(NoiseDensity, 1, 12),
-        Math.Clamp(LowPassCutoff, 80, 24000),
-        Math.Clamp(HighPassCutoff, 10, 1000),
-        Math.Clamp(Brownness, 0, 100),
-        Math.Clamp(VisualizerMode, 0, 2));
+        NormalizeSelectedPage(),
+        Math.Clamp(VisualizerMode, 0, 2),
+        GetValidSettings(BrownNoise)?.Normalize(),
+        GetValidSettings(WhiteNoise)?.Normalize(),
+        GetValidSettings(GreenNoise)?.Normalize(),
+        SelectedColors is null
+            ? [NoiseColor.Brown]
+            : [.. SelectedColors.Where(color => Enum.IsDefined(color)).Distinct()]);
+
+    private static NoiseSettings? GetValidSettings(NoiseSettings? settings) =>
+        settings is { IsValid: true } ? settings : null;
+
+    private string NormalizeSelectedPage() =>
+        SelectedPage is SettingsPage or AboutPage ||
+        (SelectedPage is not null && Enum.GetNames<NoiseColor>().Contains(SelectedPage))
+            ? SelectedPage
+            : nameof(NoiseColor.Brown);
 }

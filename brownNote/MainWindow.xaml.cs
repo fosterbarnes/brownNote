@@ -4,6 +4,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Navigation;
 using System.Windows.Media;
@@ -18,10 +19,8 @@ namespace brownNote;
 public partial class MainWindow : System.Windows.Window
 {
     private static readonly TimeSpan _tabTransitionDuration = TimeSpan.FromMilliseconds(180);
-    private const double _MINIMUM_INTEGRATOR_CUTOFF = 10;
-    private const double _MAXIMUM_INTEGRATOR_CUTOFF = 500;
 
-    private readonly GeneratedAudioPlayer _generatedAudioPlayer = new();
+    private readonly NoiseMachine _noiseMachine = new();
     private readonly string _aboutInstallPath = AppContext.BaseDirectory.TrimEnd(
         Path.DirectorySeparatorChar,
         Path.AltDirectorySeparatorChar);
@@ -29,20 +28,26 @@ public partial class MainWindow : System.Windows.Window
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "brownNote");
     private readonly SoundEffects _soundEffects = new();
+    private AppPreferences _preferences = AppPreferences.Defaults;
+    private NoiseColor _activeNoiseColor = NoiseColor.Brown;
     private bool _transportSwitched;
+    private bool _applyingSettings;
     private FrameworkElement? _activePage;
     private int _pageTransition;
+    private readonly Dictionary<Slider, (DoubleAnimation Animation, double? Frequency)> _sliderAnimations = [];
 
     public MainWindow()
     {
         InitializeComponent();
+        NoiseMachinePage.PreviewMouseDown += (_, _) => StopSliderAnimations();
+        NoiseMachinePage.PreviewKeyDown += (_, _) => StopSliderAnimations();
         InitializeAboutPage();
         RestorePreferences();
         WindowLocationStore.Restore(this);
         SourceInitialized += (_, _) => WindowsTitleBarTheme.ApplyImmersiveDarkMode(this);
-        _generatedAudioPlayer.FadedOut += () => Dispatcher.BeginInvoke(() =>
+        _noiseMachine.FadedOut += () => Dispatcher.BeginInvoke(() =>
         {
-            if (_generatedAudioPlayer.IsPlaying)
+            if (_noiseMachine.IsPlaying)
                 return;
 
             StopAudio();
@@ -72,26 +77,28 @@ public partial class MainWindow : System.Windows.Window
 
     private void RestorePreferences()
     {
-        var preferences = AppPreferencesStore.Load();
-        ModeTabs.SelectedIndex = preferences.SelectedTab;
-        GeneratedVolumeSlider.Value = preferences.GeneratedVolume;
-        NoiseDensitySlider.Value = preferences.NoiseDensity;
-        LowPassCutoffSlider.Value = preferences.LowPassCutoff;
-        HighPassCutoffSlider.Value = preferences.HighPassCutoff;
-        BrownnessSlider.Value = preferences.Brownness;
-        VisualizerModeComboBox.SelectedIndex = preferences.VisualizerMode;
+        _preferences = AppPreferencesStore.Load();
+        foreach (var color in Enum.GetValues<NoiseColor>())
+        {
+            ApplyChannelSettings(color, _preferences.GetNoiseSettings(color));
+        }
+        foreach (var key in ColorKeys)
+        {
+            var color = (NoiseColor)key.Tag;
+            var selected = _preferences.SelectedColors?.Contains(color) == true;
+            key.IsChecked = selected;
+            _noiseMachine.SetSelected(color, selected);
+        }
+        ModeTabs.SelectedItem = ModeTabs.Items.OfType<TabItem>()
+            .First(tab => PageName(tab) == _preferences.SelectedPage);
+        ApplyNoiseSettings(SelectedNoiseColor ?? NoiseColor.Brown);
+        RefreshBoundsEditors();
+        VisualizerModeComboBox.SelectedIndex = _preferences.VisualizerMode;
     }
 
     private void MainWindow_Loaded(object sender, System.Windows.RoutedEventArgs e)
     {
-        _generatedAudioPlayer.Volume = (float)GeneratedVolumeSlider.Value;
-        _generatedAudioPlayer.NoiseDensity = (int)NoiseDensitySlider.Value;
-        _generatedAudioPlayer.LowPassCutoff = (float)LowPassCutoffSlider.Value;
-        _generatedAudioPlayer.HighPassCutoff = (float)HighPassCutoffSlider.Value;
-        _generatedAudioPlayer.IntegratorCutoff = IntegratorCutoffFromBrownness(BrownnessSlider.Value);
-        Visualizer.Tap = _generatedAudioPlayer.Tap;
-        Visualizer.LowPassCutoff = LowPassCutoffSlider.Value;
-        Visualizer.HighPassCutoff = HighPassCutoffSlider.Value;
+        Visualizer.Tap = _noiseMachine.Tap;
         UpdateTabForegrounds(false);
         UpdateTabRowLayout(false);
         ShowModePage(false);
@@ -99,44 +106,56 @@ public partial class MainWindow : System.Windows.Window
 
     private void GeneratedVolumeSlider_ValueChanged(object sender, System.Windows.RoutedPropertyChangedEventArgs<double> e)
     {
-        _generatedAudioPlayer.Volume = (float)e.NewValue;
+        if (IsApplyingSettings(sender))
+            return;
+
+        _noiseMachine[_activeNoiseColor].OutputGain = (float)e.NewValue;
     }
 
     private void NoiseDensitySlider_ValueChanged(
         object sender,
         System.Windows.RoutedPropertyChangedEventArgs<double> e)
     {
-        _generatedAudioPlayer.NoiseDensity = (int)e.NewValue;
+        if (IsApplyingSettings(sender))
+            return;
+
+        _noiseMachine[_activeNoiseColor].NoiseDensity = (int)e.NewValue;
     }
 
-    private void LowPassCutoffSlider_ValueChanged(
+    private void LowPassCutoffSlider_FrequencyChanged(
         object sender,
         System.Windows.RoutedPropertyChangedEventArgs<double> e)
     {
-        if (HighPassCutoffSlider is not null && e.NewValue <= HighPassCutoffSlider.Value)
+        if (IsApplyingSettings(sender))
+            return;
+
+        if (HighPassCutoffSlider is not null && e.NewValue <= HighPassCutoffSlider.Frequency)
         {
-            LowPassCutoffSlider.Value = e.OldValue;
+            LowPassCutoffSlider.Frequency = e.OldValue;
             return;
         }
 
-        _generatedAudioPlayer.LowPassCutoff = (float)e.NewValue;
+        _noiseMachine[_activeNoiseColor].LowPassCutoff = (float)e.NewValue;
         if (Visualizer is not null)
         {
             Visualizer.LowPassCutoff = e.NewValue;
         }
     }
 
-    private void HighPassCutoffSlider_ValueChanged(
+    private void HighPassCutoffSlider_FrequencyChanged(
         object sender,
         System.Windows.RoutedPropertyChangedEventArgs<double> e)
     {
-        if (e.NewValue >= LowPassCutoffSlider.Value)
+        if (IsApplyingSettings(sender))
+            return;
+
+        if (e.NewValue >= LowPassCutoffSlider.Frequency)
         {
-            HighPassCutoffSlider.Value = e.OldValue;
+            HighPassCutoffSlider.Frequency = e.OldValue;
             return;
         }
 
-        _generatedAudioPlayer.HighPassCutoff = (float)e.NewValue;
+        _noiseMachine[_activeNoiseColor].HighPassCutoff = (float)e.NewValue;
         if (Visualizer is not null)
         {
             Visualizer.HighPassCutoff = e.NewValue;
@@ -148,16 +167,34 @@ public partial class MainWindow : System.Windows.Window
         Visualizer.Mode = (VisualizerMode)Math.Max(0, VisualizerModeComboBox.SelectedIndex);
     }
 
-    private void BrownnessSlider_ValueChanged(
+    private void ColornessSlider_ValueChanged(
         object sender,
         System.Windows.RoutedPropertyChangedEventArgs<double> e)
     {
-        _generatedAudioPlayer.IntegratorCutoff = IntegratorCutoffFromBrownness(e.NewValue);
+        if (IsApplyingSettings(sender))
+            return;
+
+        _noiseMachine[_activeNoiseColor].Colorness = (float)e.NewValue;
+        if (Visualizer is not null)
+        {
+            Visualizer.Colorness = e.NewValue;
+        }
     }
 
     private void AudioValueEditor_GotFocus(object sender, RoutedEventArgs e)
     {
         ((TextBox)sender).SelectAll();
+    }
+
+    private void ValueEditor_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount < 2)
+            return;
+
+        var editor = (TextBox)sender;
+        editor.Focus();
+        editor.SelectAll();
+        e.Handled = true;
     }
 
     private void AudioValueEditor_LostFocus(object sender, RoutedEventArgs e)
@@ -201,16 +238,37 @@ public partial class MainWindow : System.Windows.Window
             value /= 100;
         }
 
-        if (!double.IsFinite(value) || value < slider.Minimum || value > slider.Maximum ||
-            (metric == AudioMetric.Count && value != Math.Truncate(value)) ||
-            (ReferenceEquals(slider, LowPassCutoffSlider) && value <= HighPassCutoffSlider.Value) ||
-            (ReferenceEquals(slider, HighPassCutoffSlider) && value >= LowPassCutoffSlider.Value))
+        if (!double.IsFinite(value))
         {
             RefreshAudioValue(editor);
             return;
         }
 
-        slider.Value = value;
+        if (slider is LogSlider logSlider)
+        {
+            value = Math.Round(Math.Clamp(value, logSlider.FrequencyMinimum, logSlider.FrequencyMaximum));
+        }
+        else
+        {
+            value = Math.Clamp(value, slider.Minimum, slider.Maximum);
+        }
+
+        if ((metric == AudioMetric.Count && value != Math.Truncate(value)) ||
+            (ReferenceEquals(slider, LowPassCutoffSlider) && value <= HighPassCutoffSlider.Frequency) ||
+            (ReferenceEquals(slider, HighPassCutoffSlider) && value >= LowPassCutoffSlider.Frequency))
+        {
+            RefreshAudioValue(editor);
+            return;
+        }
+
+        if (slider is LogSlider frequencySlider)
+        {
+            frequencySlider.Frequency = value;
+        }
+        else
+        {
+            slider.Value = value;
+        }
         RefreshAudioValue(editor);
     }
 
@@ -249,6 +307,12 @@ public partial class MainWindow : System.Windows.Window
             UpdateTabRowLayout(true);
             if (IsLoaded)
             {
+                SaveActiveNoiseSettings();
+                if (SelectedNoiseColor is { } color)
+                {
+                    ApplyNoiseSettings(color, animate: ReferenceEquals(_activePage, NoiseMachinePage));
+                }
+                RefreshBoundsEditors();
                 ShowModePage(true);
             }
         }
@@ -315,10 +379,11 @@ public partial class MainWindow : System.Windows.Window
 
     private void ShowModePage(bool animate)
     {
-        FrameworkElement? nextPage = ModeTabs.SelectedIndex switch
+        FrameworkElement? nextPage = (ModeTabs.SelectedItem as TabItem)?.Tag switch
         {
-            0 => GeneratedAudioPage,
-            1 => AboutPage,
+            NoiseColor => NoiseMachinePage,
+            AppPreferences.SettingsPage => SettingsPage,
+            AppPreferences.AboutPage => AboutPage,
             _ => null
         };
         if (nextPage is null || ReferenceEquals(nextPage, _activePage))
@@ -336,7 +401,8 @@ public partial class MainWindow : System.Windows.Window
         {
             nextPage.Opacity = 1;
             HideInactivePage(AboutPage, nextPage);
-            HideInactivePage(GeneratedAudioPage, nextPage);
+            HideInactivePage(SettingsPage, nextPage);
+            HideInactivePage(NoiseMachinePage, nextPage);
             return;
         }
 
@@ -371,6 +437,269 @@ public partial class MainWindow : System.Windows.Window
         page.BeginAnimation(UIElement.OpacityProperty, null);
         page.Opacity = 0;
         page.Visibility = Visibility.Collapsed;
+    }
+
+    private static string PageName(TabItem tab) => tab.Tag.ToString()!;
+
+    private NoiseColor? SelectedNoiseColor => (ModeTabs.SelectedItem as TabItem)?.Tag as NoiseColor?;
+
+    private void ApplyNoiseSettings(NoiseColor color, bool animate = false)
+    {
+        var colorChanged = color != _activeNoiseColor;
+        _activeNoiseColor = color;
+        var settings = _preferences.GetNoiseSettings(color);
+        var bounds = settings.Bounds;
+        animate &= SystemParameters.ClientAreaAnimation;
+        var sliders = NoiseSliders;
+        var startPositions = sliders.Select(slider => slider.Value).ToArray();
+        StopSliderAnimations();
+
+        ColornessLabel.Text = $"{color}ness";
+        ColornessControl.IsEnabled = color != NoiseColor.White;
+        ColornessSlider.IsEnabled = ColornessControl.IsEnabled;
+        if (animate && colorChanged)
+        {
+            ColornessLabel.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, _tabTransitionDuration));
+        }
+
+        _applyingSettings = true;
+        try
+        {
+            HighPassCutoffSlider.FrequencyMinimum = bounds.HighPassMin;
+            HighPassCutoffSlider.FrequencyMaximum = bounds.HighPassMax;
+            LowPassCutoffSlider.FrequencyMinimum = bounds.LowPassMin;
+            LowPassCutoffSlider.FrequencyMaximum = bounds.LowPassMax;
+            GeneratedVolumeSlider.Minimum = bounds.GainMin;
+            GeneratedVolumeSlider.Maximum = bounds.GainMax;
+            ColornessSlider.Minimum = color == NoiseColor.White ? 0 : bounds.ColornessMin;
+            ColornessSlider.Maximum = color == NoiseColor.White ? 100 : bounds.ColornessMax;
+            GeneratedVolumeSlider.Value = settings.Volume;
+            NoiseDensitySlider.Value = settings.NoiseDensity;
+            LowPassCutoffSlider.Frequency = settings.LowPassCutoff;
+            HighPassCutoffSlider.Frequency = settings.HighPassCutoff;
+            ColornessSlider.Value = settings.Colorness;
+        }
+        finally
+        {
+            _applyingSettings = false;
+        }
+
+        if (animate)
+        {
+            for (var index = 0; index < sliders.Length; index++)
+            {
+                AnimateSliderFrom(sliders[index], startPositions[index]);
+            }
+        }
+
+        ApplyChannelSettings(color, settings);
+        Visualizer.Colorness = settings.Colorness;
+        Visualizer.LowPassCutoff = settings.LowPassCutoff;
+        Visualizer.HighPassCutoff = settings.HighPassCutoff;
+        Visualizer.Color = color;
+    }
+
+    private void ApplyChannelSettings(NoiseColor color, NoiseSettings settings)
+    {
+        var channel = _noiseMachine[color];
+        channel.OutputGain = (float)settings.Volume;
+        channel.NoiseDensity = settings.NoiseDensity;
+        channel.UpdateCutoffs(
+            (float)settings.HighPassCutoff,
+            (float)settings.LowPassCutoff,
+            (float)settings.Colorness);
+    }
+
+    private void SaveActiveNoiseSettings()
+    {
+        // Sliders show in-between values while a tab animation is running. The channel already has the target.
+        var channel = _noiseMachine[_activeNoiseColor];
+        var settings = new NoiseSettings(
+            channel.OutputGain,
+            channel.NoiseDensity,
+            channel.LowPassCutoff,
+            channel.HighPassCutoff,
+            channel.Colorness,
+            _preferences.GetNoiseSettings(_activeNoiseColor).Bounds);
+        _preferences = _preferences.WithNoiseSettings(_activeNoiseColor, settings.Normalize());
+    }
+
+    private Slider[] NoiseSliders =>
+        [GeneratedVolumeSlider, LowPassCutoffSlider, HighPassCutoffSlider, ColornessSlider, NoiseDensitySlider];
+
+    private bool IsApplyingSettings(object sender) =>
+        _applyingSettings || (sender is Slider slider && _sliderAnimations.ContainsKey(slider));
+
+    // Animates only the thumb and its value text; the audio already has the target settings.
+    private void AnimateSliderFrom(Slider slider, double from)
+    {
+        var to = slider.Value;
+        if (Math.Abs(to - from) < 1e-9)
+            return;
+
+        var animation = new DoubleAnimation(from, to, _tabTransitionDuration)
+        {
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseInOut },
+            FillBehavior = FillBehavior.Stop
+        };
+        var frequency = (slider as LogSlider)?.Frequency;
+        animation.Completed += (_, _) =>
+        {
+            if (_sliderAnimations.TryGetValue(slider, out var active) && ReferenceEquals(active.Animation, animation))
+            {
+                FinishSliderAnimation(slider);
+            }
+        };
+        _sliderAnimations[slider] = (animation, frequency);
+        slider.BeginAnimation(RangeBase.ValueProperty, animation);
+    }
+
+    private void FinishSliderAnimation(Slider slider)
+    {
+        if (!_sliderAnimations.TryGetValue(slider, out var active))
+            return;
+
+        slider.BeginAnimation(RangeBase.ValueProperty, null);
+        _sliderAnimations.Remove(slider);
+        if (slider is LogSlider logSlider && active.Frequency is { } frequency)
+        {
+            _applyingSettings = true;
+            try
+            {
+                logSlider.Frequency = frequency;
+            }
+            finally
+            {
+                _applyingSettings = false;
+            }
+        }
+    }
+
+    private void StopSliderAnimations()
+    {
+        foreach (var slider in _sliderAnimations.Keys.ToArray())
+        {
+            FinishSliderAnimation(slider);
+        }
+    }
+
+    private IEnumerable<TextBox> BoundsEditors => BoundsEditorsPanel.Children
+        .OfType<Grid>()
+        .SelectMany(section => section.Children.OfType<TextBox>());
+
+    private void RefreshBoundsEditors()
+    {
+        foreach (var editor in BoundsEditors)
+        {
+            var (color, field) = ParseBoundsTag(editor);
+            var bounds = _preferences.GetNoiseSettings(color).Bounds;
+            var value = field switch
+            {
+                nameof(NoiseBounds.HighPassMin) => bounds.HighPassMin,
+                nameof(NoiseBounds.HighPassMax) => bounds.HighPassMax,
+                nameof(NoiseBounds.LowPassMin) => bounds.LowPassMin,
+                nameof(NoiseBounds.LowPassMax) => bounds.LowPassMax,
+                nameof(NoiseBounds.GainMin) => bounds.GainMin,
+                nameof(NoiseBounds.GainMax) => bounds.GainMax,
+                nameof(NoiseBounds.ColornessMin) => bounds.ColornessMin,
+                _ => bounds.ColornessMax
+            };
+            editor.Text = BoundsMetric(field) switch
+            {
+                AudioMetric.Percentage => value.ToString("P0", CultureInfo.CurrentCulture),
+                AudioMetric.WholePercentage => $"{value.ToString("N0", CultureInfo.CurrentCulture)}%",
+                _ => $"{value.ToString("N0", CultureInfo.CurrentCulture)} Hz"
+            };
+        }
+    }
+
+    private static (NoiseColor Color, string Field) ParseBoundsTag(TextBox editor)
+    {
+        var parts = ((string)editor.Tag).Split('/');
+        return (Enum.Parse<NoiseColor>(parts[0]), parts[1]);
+    }
+
+    private void BoundsEditor_LostFocus(object sender, RoutedEventArgs e)
+    {
+        CommitBoundsValue((TextBox)sender);
+    }
+
+    private void BoundsEditor_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        var editor = (TextBox)sender;
+        if (e.Key == Key.Enter)
+        {
+            CommitBoundsValue(editor);
+            editor.SelectAll();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            RefreshBoundsEditors();
+            e.Handled = true;
+        }
+    }
+
+    private void CommitBoundsValue(TextBox editor)
+    {
+        var (color, field) = ParseBoundsTag(editor);
+        var metric = BoundsMetric(field);
+        if (!TryParseAudioValue(editor.Text, metric, out var value) || !double.IsFinite(value))
+        {
+            RefreshBoundsEditors();
+            return;
+        }
+
+        if (metric == AudioMetric.Percentage)
+        {
+            value /= 100;
+        }
+
+        var bounds = _preferences.GetNoiseSettings(color).Bounds;
+        SetBounds(color, field switch
+        {
+            nameof(NoiseBounds.HighPassMin) => bounds with { HighPassMin = value },
+            nameof(NoiseBounds.HighPassMax) => bounds with { HighPassMax = value },
+            nameof(NoiseBounds.LowPassMin) => bounds with { LowPassMin = value },
+            nameof(NoiseBounds.LowPassMax) => bounds with { LowPassMax = value },
+            nameof(NoiseBounds.GainMin) => bounds with { GainMin = value },
+            nameof(NoiseBounds.GainMax) => bounds with { GainMax = value },
+            nameof(NoiseBounds.ColornessMin) => bounds with { ColornessMin = value },
+            _ => bounds with { ColornessMax = value }
+        });
+    }
+
+    private static AudioMetric BoundsMetric(string field) => field switch
+    {
+        nameof(NoiseBounds.GainMin) or nameof(NoiseBounds.GainMax) => AudioMetric.Percentage,
+        nameof(NoiseBounds.ColornessMin) or nameof(NoiseBounds.ColornessMax) => AudioMetric.WholePercentage,
+        _ => AudioMetric.Hertz
+    };
+
+    private void ResetBounds_Click(object sender, RoutedEventArgs e)
+    {
+        SetBounds((NoiseColor)((Button)sender).Tag, NoiseBounds.Defaults);
+    }
+
+    private void ResetAllBounds_Click(object sender, RoutedEventArgs e)
+    {
+        foreach (var color in Enum.GetValues<NoiseColor>())
+        {
+            SetBounds(color, NoiseBounds.Defaults);
+        }
+    }
+
+    private void SetBounds(NoiseColor color, NoiseBounds bounds)
+    {
+        SaveActiveNoiseSettings();
+        var settings = (_preferences.GetNoiseSettings(color) with { Bounds = bounds }).Normalize();
+        _preferences = _preferences.WithNoiseSettings(color, settings);
+        ApplyChannelSettings(color, settings);
+        if (color == _activeNoiseColor)
+        {
+            ApplyNoiseSettings(color);
+        }
+        RefreshBoundsEditors();
     }
 
     private void UpdateTabForegrounds(bool animate)
@@ -438,15 +767,21 @@ public partial class MainWindow : System.Windows.Window
 
     private void PlayKey_Checked(object sender, RoutedEventArgs e)
     {
+        if (!_noiseMachine.HasSelection)
+        {
+            StopKey.IsChecked = true;
+            return;
+        }
+
         OnTransportSwitched();
         try
         {
-            _generatedAudioPlayer.Play();
+            _noiseMachine.Play();
             Visualizer.IsActive = true;
         }
         catch (Exception)
         {
-            _generatedAudioPlayer.Stop();
+            _noiseMachine.Stop();
             StopKey.IsChecked = true;
         }
     }
@@ -454,7 +789,21 @@ public partial class MainWindow : System.Windows.Window
     private void StopKey_Checked(object sender, RoutedEventArgs e)
     {
         OnTransportSwitched();
-        _generatedAudioPlayer.Pause();
+        _noiseMachine.Pause();
+    }
+
+    private ToggleButton[] ColorKeys => [BrownKey, GreenKey, WhiteKey];
+
+    private void ColorKey_Click(object sender, RoutedEventArgs e)
+    {
+        var key = (ToggleButton)sender;
+        _soundEffects.ButtonDown();
+        _soundEffects.ButtonUp();
+        _noiseMachine.SetSelected((NoiseColor)key.Tag, key.IsChecked == true);
+        if (!_noiseMachine.HasSelection && PlayKey.IsChecked == true)
+        {
+            StopKey.IsChecked = true;
+        }
     }
 
     private void AboutOpenInstallLocation_Click(object sender, RoutedEventArgs e)
@@ -489,32 +838,21 @@ public partial class MainWindow : System.Windows.Window
 
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        AppPreferencesStore.Save(new AppPreferences(
-            ModeTabs.SelectedIndex,
-            GeneratedVolumeSlider.Value,
-            (int)NoiseDensitySlider.Value,
-            LowPassCutoffSlider.Value,
-            HighPassCutoffSlider.Value,
-            BrownnessSlider.Value,
-            VisualizerModeComboBox.SelectedIndex));
+        SaveActiveNoiseSettings();
+        AppPreferencesStore.Save(_preferences with
+        {
+            SelectedPage = PageName((TabItem)ModeTabs.SelectedItem),
+            VisualizerMode = VisualizerModeComboBox.SelectedIndex,
+            SelectedColors = [.. _noiseMachine.SelectedColors]
+        });
         WindowLocationStore.Save(this);
         StopAudio();
     }
 
-    private bool StopAudio()
+    private void StopAudio()
     {
-        var stopped = _generatedAudioPlayer.Stop() is null;
+        _noiseMachine.Stop();
         Visualizer.IsActive = false;
-        return stopped;
-    }
-
-    private static float IntegratorCutoffFromBrownness(double brownness)
-    {
-        var normalized = Math.Clamp(brownness, 0, 100) / 100;
-        var cutoff = _MAXIMUM_INTEGRATOR_CUTOFF * Math.Pow(
-            _MINIMUM_INTEGRATOR_CUTOFF / _MAXIMUM_INTEGRATOR_CUTOFF,
-            normalized);
-        return (float)cutoff;
     }
 
 }
