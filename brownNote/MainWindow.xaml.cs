@@ -10,6 +10,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 
 using brownNote.Audio;
+using brownNote.Controls;
 using brownNote.Helpers;
 
 namespace brownNote;
@@ -75,6 +76,7 @@ public partial class MainWindow : System.Windows.Window
         LowPassCutoffSlider.Value = preferences.LowPassCutoff;
         HighPassCutoffSlider.Value = preferences.HighPassCutoff;
         BrownnessSlider.Value = preferences.Brownness;
+        VisualizerModeComboBox.SelectedIndex = preferences.VisualizerMode;
     }
 
     private void MainWindow_Loaded(object sender, System.Windows.RoutedEventArgs e)
@@ -84,6 +86,9 @@ public partial class MainWindow : System.Windows.Window
         _generatedAudioPlayer.LowPassCutoff = (float)LowPassCutoffSlider.Value;
         _generatedAudioPlayer.HighPassCutoff = (float)HighPassCutoffSlider.Value;
         _generatedAudioPlayer.IntegratorCutoff = IntegratorCutoffFromBrownness(BrownnessSlider.Value);
+        Visualizer.Tap = _generatedAudioPlayer.Tap;
+        Visualizer.LowPassCutoff = LowPassCutoffSlider.Value;
+        Visualizer.HighPassCutoff = HighPassCutoffSlider.Value;
         UpdateTabForegrounds(false);
         UpdateTabRowLayout(false);
         ShowModePage(false);
@@ -112,6 +117,10 @@ public partial class MainWindow : System.Windows.Window
         }
 
         _generatedAudioPlayer.LowPassCutoff = (float)e.NewValue;
+        if (Visualizer is not null)
+        {
+            Visualizer.LowPassCutoff = e.NewValue;
+        }
     }
 
     private void HighPassCutoffSlider_ValueChanged(
@@ -125,6 +134,15 @@ public partial class MainWindow : System.Windows.Window
         }
 
         _generatedAudioPlayer.HighPassCutoff = (float)e.NewValue;
+        if (Visualizer is not null)
+        {
+            Visualizer.HighPassCutoff = e.NewValue;
+        }
+    }
+
+    private void VisualizerModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        Visualizer.Mode = (VisualizerMode)Math.Max(0, VisualizerModeComboBox.SelectedIndex);
     }
 
     private void BrownnessSlider_ValueChanged(
@@ -412,6 +430,7 @@ public partial class MainWindow : System.Windows.Window
         try
         {
             _generatedAudioPlayer.Play();
+            Visualizer.IsActive = true;
         }
         catch (Exception)
         {
@@ -465,14 +484,17 @@ public partial class MainWindow : System.Windows.Window
             (int)NoiseDensitySlider.Value,
             LowPassCutoffSlider.Value,
             HighPassCutoffSlider.Value,
-            BrownnessSlider.Value));
+            BrownnessSlider.Value,
+            VisualizerModeComboBox.SelectedIndex));
         WindowLocationStore.Save(this);
         StopAudio();
     }
 
     private bool StopAudio()
     {
-        return _generatedAudioPlayer.Stop() is null;
+        var stopped = _generatedAudioPlayer.Stop() is null;
+        Visualizer.IsActive = false;
+        return stopped;
     }
 
     private static float IntegratorCutoffFromBrownness(double brownness)

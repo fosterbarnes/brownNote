@@ -57,9 +57,10 @@ internal sealed record AppPreferences(
     int NoiseDensity,
     double LowPassCutoff,
     double HighPassCutoff,
-    double Brownness)
+    double Brownness,
+    int VisualizerMode = 0)
 {
-    public static AppPreferences Defaults { get; } = new(0, 1, 4, 120, 17, 67);
+    public static AppPreferences Defaults { get; } = new(0, 1, 4, 120, 17, 67, 0);
 
     public AppPreferences Normalize() => new(
         Math.Clamp(SelectedTab, 0, 1),
@@ -67,5 +68,6 @@ internal sealed record AppPreferences(
         Math.Clamp(NoiseDensity, 1, 12),
         Math.Clamp(LowPassCutoff, 80, 24000),
         Math.Clamp(HighPassCutoff, 10, 1000),
-        Math.Clamp(Brownness, 0, 100));
+        Math.Clamp(Brownness, 0, 100),
+        Math.Clamp(VisualizerMode, 0, 2));
 }

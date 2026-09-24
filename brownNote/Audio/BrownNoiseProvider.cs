@@ -32,6 +32,7 @@ public sealed class BrownNoiseProvider : ISampleProvider
     private readonly float[] _integratorCoefficients = new float[MaximumNoiseDensity];
     private readonly float[] _highPassCoefficients = new float[MaximumNoiseDensity];
     private readonly float[] _lowPassCoefficients = new float[MaximumNoiseDensity];
+    private readonly AudioTap? _tap;
     private float _outputGain = 1f;
     private float _currentSample;
     private int _channelPosition;
@@ -40,8 +41,10 @@ public sealed class BrownNoiseProvider : ISampleProvider
         float highPassCutoff,
         float lowPassCutoff,
         float integratorCutoff,
-        int noiseDensity)
+        int noiseDensity,
+        AudioTap? tap = null)
     {
+        _tap = tap;
         ValidateCutoff(highPassCutoff, nameof(highPassCutoff));
         ValidateCutoff(lowPassCutoff, nameof(lowPassCutoff));
         ValidateCutoff(integratorCutoff, nameof(integratorCutoff));
@@ -147,6 +150,7 @@ public sealed class BrownNoiseProvider : ISampleProvider
 
                 _currentSample = sample * BaseOutputGain * Volatile.Read(ref _outputGain) /
                     MathF.Sqrt(noiseDensity);
+                _tap?.Write(_currentSample);
                 _channelPosition = 1;
             }
             else

@@ -15,4 +15,6 @@
     <SolidColorBrush x:Key="SecondaryTextBrush" Color="#D0D0D0" />
     <SolidColorBrush x:Key="TertiaryTextBrush" Color="#CCCCCC" />
     <SolidColorBrush x:Key="FocusBrush" Color="#AC98C7" />
+    <SolidColorBrush x:Key="ClipBrush" Color="#B8444A" />
+
 </ResourceDictionary>

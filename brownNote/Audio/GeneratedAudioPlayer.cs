@@ -17,6 +17,10 @@ public sealed class GeneratedAudioPlayer : IDisposable
     private float _integratorCutoff = DefaultIntegratorCutoff;
     private int _noiseDensity = DefaultNoiseDensity;
 
+    public AudioTap Tap { get; } = new();
+
+    public bool IsPlaying => _player is not null;
+
     public float Volume
     {
         get => _volume;
@@ -101,7 +105,8 @@ public sealed class GeneratedAudioPlayer : IDisposable
             HighPassCutoff,
             LowPassCutoff,
             IntegratorCutoff,
-            NoiseDensity);
+            NoiseDensity,
+            Tap);
         var player = new WasapiPlayerBuilder().Build();
         try
         {
