@@ -14,17 +14,17 @@ Brown noise machine app. Windows only. C# .NET 10 WPF
 </table>
 <!-- End Quick Reference -->
 
-## Visualizer Modes
+## Noise Machine Tabs
 
-| <h3>Waveform</h3> |
+| <h3>Brown</h3> |
 |:---:|
 | <img src="./.res/scr/1.png" width="600" style="margin: 20px; padding: 20px;"> |
 
-| <h3>Spectrum</h3> |
+| <h3>Green</h3> |
 |:---:|
 | <img src="./.res/scr/2.png" width="600" style="margin: 20px; padding: 20px;"> |
 
-| <h3>Level Meter</h3> |
+| <h3>White</h3> |
 |:---:|
 | <img src="./.res/scr/3.png" width="600" style="margin: 20px; padding: 20px;"> |
 
