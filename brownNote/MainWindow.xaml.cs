@@ -1,4 +1,4 @@
-using System.Globalization;
+   using System.Globalization;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -340,6 +340,11 @@ public partial class MainWindow : System.Windows.Window
 
         indicator.Width = tabWidth;
         UpdateTabDividers(dividerLayer, tabWidth, tabCount);
+        var (fillColor, borderColor) = TabIndicatorColors();
+        indicator.Background = Unfrozen(indicator.Background);
+        indicator.BorderBrush = Unfrozen(indicator.BorderBrush);
+        AnimateColor((SolidColorBrush)indicator.Background, fillColor, animate);
+        AnimateColor((SolidColorBrush)indicator.BorderBrush, borderColor, animate);
         if (animate)
         {
             transform.BeginAnimation(
@@ -702,31 +707,51 @@ public partial class MainWindow : System.Windows.Window
         RefreshBoundsEditors();
     }
 
+    private (Color Fill, Color Border) TabIndicatorColors()
+    {
+        return (ModeTabs.SelectedItem as TabItem)?.Tag switch
+        {
+            NoiseColor.Brown => (ResourceColor("BrownKeyBrush"), ResourceColor("BrownKeyAccentBrush")),
+            NoiseColor.Green => (ResourceColor("GreenKeyBrush"), ResourceColor("GreenKeyAccentBrush")),
+            NoiseColor.White => (ResourceColor("WhiteKeyBrush"), ResourceColor("WhiteKeyAccentBrush")),
+            _ => (ResourceColor("AccentStrongBrush"), ResourceColor("AccentBorderBrush"))
+        };
+    }
+
+    private Color ResourceColor(string key) => ((SolidColorBrush)FindResource(key)).Color;
+
     private void UpdateTabForegrounds(bool animate)
     {
-        var selectedColor = ((SolidColorBrush)FindResource("PrimaryTextBrush")).Color;
-        var unselectedColor = ((SolidColorBrush)FindResource("TertiaryTextBrush")).Color;
+        var selectedColor = ResourceColor("PrimaryTextBrush");
+        var unselectedColor = ResourceColor("TertiaryTextBrush");
+        var whiteSelectedColor = ResourceColor("AppBackgroundBrush");
         foreach (var item in ModeTabs.Items)
         {
-            if (item is TabItem tab)
-            {
-                SetTabForeground(tab, tab.IsSelected ? selectedColor : unselectedColor, animate);
-            }
+            if (item is not TabItem tab)
+                continue;
+
+            var color = !tab.IsSelected
+                ? unselectedColor
+                : tab.Tag is NoiseColor.White ? whiteSelectedColor : selectedColor;
+            SetTabForeground(tab, color, animate);
         }
     }
 
     private static void SetTabForeground(TabItem tab, Color color, bool animate)
     {
-        if (tab.Foreground is not SolidColorBrush brush)
-        {
+        if (tab.Foreground is not SolidColorBrush)
             return;
-        }
-        if (brush.IsFrozen)
-        {
-            brush = brush.Clone();
-            tab.Foreground = brush;
-        }
 
+        var brush = Unfrozen(tab.Foreground);
+        tab.Foreground = brush;
+        AnimateColor(brush, color, animate);
+    }
+
+    private static SolidColorBrush Unfrozen(Brush source) =>
+        source is SolidColorBrush brush && !brush.IsFrozen ? brush : ((SolidColorBrush)source).Clone();
+
+    private static void AnimateColor(SolidColorBrush brush, Color color, bool animate)
+    {
         brush.BeginAnimation(
             SolidColorBrush.ColorProperty,
             animate
@@ -736,9 +761,7 @@ public partial class MainWindow : System.Windows.Window
                 }
                 : null);
         if (!animate)
-        {
             brush.Color = color;
-        }
     }
 
     private void TransportKey_Click(object sender, RoutedEventArgs e)
