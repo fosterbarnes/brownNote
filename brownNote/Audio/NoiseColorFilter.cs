@@ -12,14 +12,16 @@ internal abstract class NoiseColorFilter
     };
 
     // Magnitude of the color filter alone, before the channel's high-pass and low-pass.
-    public static double Response(NoiseColor color, double colorness, double frequency) => color switch
+    public static double Response(NoiseColor color, double colorness, double frequency,
+        double pitchRatio = 1) => color switch
     {
         NoiseColor.White => 1,
-        NoiseColor.Green => GreenNoiseFilter.Response(colorness, frequency),
-        _ => BrownNoiseFilter.Response(colorness, frequency)
+        NoiseColor.Green => GreenNoiseFilter.Response(colorness, frequency, pitchRatio),
+        _ => BrownNoiseFilter.Response(colorness, frequency, pitchRatio)
     };
 
-    public abstract ColorCoefficients GetCoefficients(float colorness, float variation);
+    public abstract ColorCoefficients GetCoefficients(float colorness, float variation,
+        double pitchRatio = 1);
 
     public virtual void ResetVoice(int voice){}
 
@@ -38,7 +40,8 @@ internal sealed class WhiteNoiseFilter : NoiseColorFilter
 {
     public const double Colorness = 100;
 
-    public override ColorCoefficients GetCoefficients(float colorness, float variation) => new(0, 0, 1);
+    public override ColorCoefficients GetCoefficients(float colorness, float variation,
+        double pitchRatio = 1) => new(0, 0, 1);
 
     public override float Next(int voice, float white, in ColorCoefficients coefficients) => white;
 }
@@ -55,11 +58,13 @@ internal sealed class BrownNoiseFilter : NoiseColorFilter
     public static double Cutoff(double colorness) =>
         MaximumCutoff * Math.Pow(MinimumCutoff / MaximumCutoff, Normalize(colorness));
 
-    public static double Response(double colorness, double frequency) =>
-        OnePoleLowPass(frequency, Cutoff(colorness));
+    public static double Response(double colorness, double frequency, double pitchRatio = 1) =>
+        OnePoleLowPass(frequency, NoisePitch.ScaleFrequency(Cutoff(colorness), pitchRatio));
 
-    public override ColorCoefficients GetCoefficients(float colorness, float variation) =>
-        new(NoiseChannel.GetPoleCoefficient((float)Cutoff(colorness) * (1f + variation)), 0, 1);
+    public override ColorCoefficients GetCoefficients(float colorness, float variation,
+        double pitchRatio = 1) =>
+        new(NoiseChannel.GetPoleCoefficient((float)NoisePitch.ScaleFrequency(
+            (float)Cutoff(colorness) * (1f + variation), pitchRatio)), 0, 1);
 
     public override void ResetVoice(int voice) => _brown[voice] = 0;
 
@@ -73,7 +78,7 @@ internal sealed class BrownNoiseFilter : NoiseColorFilter
 // 0% spreads the band edges to 20 Hz and 16 kHz; 100% closes both onto the center frequency.
 internal sealed class GreenNoiseFilter : NoiseColorFilter
 {
-    public const double DefaultColorness = 62;
+    public const double DefaultColorness = 94;
     private const double CenterFrequency = 565.69;
     private const double MaximumSpread = CenterFrequency / 20;
     private const double MinimumSpread = 1;
@@ -88,24 +93,34 @@ internal sealed class GreenNoiseFilter : NoiseColorFilter
     public static double Spread(double colorness) =>
         MaximumSpread * Math.Pow(MinimumSpread / MaximumSpread, Normalize(colorness));
 
-    public static double Response(double colorness, double frequency)
+    public static double Response(double colorness, double frequency, double pitchRatio = 1)
     {
         var spread = Spread(colorness);
-        return OnePoleHighPass(frequency, CenterFrequency / spread) *
-            OnePoleLowPass(frequency, CenterFrequency * spread);
+        return OnePoleHighPass(frequency,
+            NoisePitch.ScaleFrequency(CenterFrequency / spread, pitchRatio)) *
+            OnePoleLowPass(frequency,
+                NoisePitch.ScaleFrequency(CenterFrequency * spread, pitchRatio));
     }
 
     // White noise through one-pole high-pass and low-pass edges has power proportional to spread^3 / (spread^2 + 1).
     private static double RelativePower(double spread) => spread * spread * spread / (spread * spread + 1);
 
-    public override ColorCoefficients GetCoefficients(float colorness, float variation)
+    public override ColorCoefficients GetCoefficients(float colorness, float variation,
+        double pitchRatio = 1)
     {
         var spread = Spread(colorness);
         var center = CenterFrequency * (1 + variation);
         var gain = ReferenceGain * Math.Sqrt(RelativePower(ReferenceSpread) / RelativePower(spread));
+        var high = center / spread;
+        var low = center * spread;
+        if (pitchRatio != 1)
+        {
+            high = NoisePitch.ScaleFrequency(high, pitchRatio);
+            low = NoisePitch.ScaleFrequency(low, pitchRatio);
+        }
         return new(
-            NoiseChannel.GetPoleCoefficient((float)(center / spread)),
-            1f - NoiseChannel.GetPoleCoefficient((float)(center * spread)),
+            NoiseChannel.GetPoleCoefficient((float)high),
+            1f - NoiseChannel.GetPoleCoefficient((float)low),
             (float)gain);
     }
 

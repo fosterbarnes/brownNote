@@ -7,9 +7,13 @@ param(
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\scriptHelper.ps1"
 Set-Location -LiteralPath $repoRoot
-$subject = $Message
+# A passed message wins. buildNotes.txt counts only when changed since the last commit;
+# unchanged, it still holds the previous push's message.
+$subject = $Message.Trim()
 $body = ''
-if (Test-Path -LiteralPath $buildNotes) {
+& git diff --quiet HEAD -- $buildNotes 2>$null
+$notesChanged = $LASTEXITCODE -ne 0 -or -not (& git ls-files -- $buildNotes)
+if (-not $subject -and $notesChanged -and (Test-Path -LiteralPath $buildNotes)) {
     $lines = @([IO.File]::ReadAllLines($buildNotes))
     if ($lines.Count -gt 0 -and $lines[0].Trim()) {
         $subject = $lines[0].Trim()
@@ -23,7 +27,8 @@ if (Test-Path -LiteralPath $buildNotes) {
         }
     }
 }
-if (-not $subject) { throw 'Provide a commit message or add a non-empty first line to buildNotes.txt.' }
+if (-not $subject -and -not $DryRun) { $subject = (Read-Host 'Commit message').Trim() }
+if (-not $subject) { throw 'Provide a commit message, or write a new one to buildNotes.txt (it is unchanged since the last commit).' }
 $branch = ((& git branch --show-current) | Out-String).Trim()
 if ($LASTEXITCODE) { throw 'Could not determine the current branch.' }
 if (-not $branch) { throw 'Detached HEAD; refusing to push.' }
@@ -42,3 +47,4 @@ runNativeCommand git $commitArgs 'git commit'
 runNativeCommand git $pushArgs 'git push'
 openUrl $appURL
 closeOut 0
+

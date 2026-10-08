@@ -405,6 +405,35 @@
                                 <ColumnDefinition />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
+                            <TextBlock Text="Pitch" />
+                            <TextBox Grid.Column="1"
+                                     Style="{StaticResource AudioValueEditorStyle}"
+                                     Tag="{Binding ElementName=PitchSlider}"
+                                     GotFocus="AudioValueEditor_GotFocus"
+                                     LostFocus="AudioValueEditor_LostFocus"
+                                     PreviewKeyDown="AudioValueEditor_PreviewKeyDown">
+                                <TextBox.Text>
+                                    <MultiBinding Converter="{StaticResource AudioMetricConverter}" Mode="OneWay">
+                                        <Binding ElementName="PitchSlider" Path="Value" />
+                                        <Binding ElementName="PitchSlider" Path="(helpers:SliderMetric.Metric)" />
+                                    </MultiBinding>
+                                </TextBox.Text>
+                            </TextBox>
+                        </Grid>
+                        <Slider x:Name="PitchSlider"
+                                Minimum="-24"
+                                Maximum="0"
+                                TickFrequency="1"
+                                IsSnapToTickEnabled="True"
+                                helpers:SliderMetric.Metric="{x:Static helpers:AudioMetric.Semitones}"
+                                Value="0"
+                                ToolTip="Shift the noise frequencies lower or higher, in semitones"
+                                ValueChanged="PitchSlider_ValueChanged" />
+                        <Grid Margin="0,18,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
                             <TextBlock Text="Low-Pass Cutoff" />
                             <TextBox x:Name="LowPassCutoffValueEditor"
                                      Grid.Column="1"
@@ -591,4 +620,3 @@
         </Border>
     </Grid>
 </Window>
-

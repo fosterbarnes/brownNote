@@ -9,7 +9,8 @@ public enum AudioMetric
     Percentage,
     WholePercentage,
     Hertz,
-    Count
+    Count,
+    Semitones
 }
 
 public static class SliderMetric
@@ -42,6 +43,7 @@ public sealed class AudioMetricConverter : IMultiValueConverter
             AudioMetric.WholePercentage => $"{value.ToString("N0", culture)}%",
             AudioMetric.Hertz => $"{value.ToString("N0", culture)} Hz",
             AudioMetric.Count => $"{value.ToString("N0", culture)} voices",
+            AudioMetric.Semitones => $"{value.ToString("+0;-0;0", culture)} st",
             _ => string.Empty
         };
     }

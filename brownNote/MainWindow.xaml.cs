@@ -122,6 +122,16 @@ public partial class MainWindow : System.Windows.Window
         _noiseMachine[_activeNoiseColor].NoiseDensity = (int)e.NewValue;
     }
 
+    private void PitchSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (IsApplyingSettings(sender))
+            return;
+
+        _noiseMachine[_activeNoiseColor].PitchSemitones = (float)e.NewValue;
+        if (Visualizer is not null)
+            Visualizer.PitchSemitones = e.NewValue;
+    }
+
     private void LowPassCutoffSlider_FrequencyChanged(
         object sender,
         System.Windows.RoutedPropertyChangedEventArgs<double> e)
@@ -253,7 +263,7 @@ public partial class MainWindow : System.Windows.Window
             value = Math.Clamp(value, slider.Minimum, slider.Maximum);
         }
 
-        if ((metric == AudioMetric.Count && value != Math.Truncate(value)) ||
+        if (((metric is AudioMetric.Count or AudioMetric.Semitones) && value != Math.Truncate(value)) ||
             (ReferenceEquals(slider, LowPassCutoffSlider) && value <= HighPassCutoffSlider.Frequency) ||
             (ReferenceEquals(slider, HighPassCutoffSlider) && value >= LowPassCutoffSlider.Frequency))
         {
@@ -279,6 +289,7 @@ public partial class MainWindow : System.Windows.Window
             AudioMetric.Percentage or AudioMetric.WholePercentage => CultureInfo.CurrentCulture.NumberFormat.PercentSymbol,
             AudioMetric.Hertz => "Hz",
             AudioMetric.Count => "voices",
+            AudioMetric.Semitones => "st",
             _ => string.Empty
         };
         var numericText = text.Trim();
@@ -479,6 +490,7 @@ public partial class MainWindow : System.Windows.Window
             ColornessSlider.Minimum = color == NoiseColor.White ? 0 : bounds.ColornessMin;
             ColornessSlider.Maximum = color == NoiseColor.White ? 100 : bounds.ColornessMax;
             GeneratedVolumeSlider.Value = settings.Volume;
+            PitchSlider.Value = settings.PitchSemitones;
             NoiseDensitySlider.Value = settings.NoiseDensity;
             LowPassCutoffSlider.Frequency = settings.LowPassCutoff;
             HighPassCutoffSlider.Frequency = settings.HighPassCutoff;
@@ -499,6 +511,7 @@ public partial class MainWindow : System.Windows.Window
 
         ApplyChannelSettings(color, settings);
         Visualizer.Colorness = settings.Colorness;
+        Visualizer.PitchSemitones = settings.PitchSemitones;
         Visualizer.LowPassCutoff = settings.LowPassCutoff;
         Visualizer.HighPassCutoff = settings.HighPassCutoff;
         Visualizer.Color = color;
@@ -509,6 +522,7 @@ public partial class MainWindow : System.Windows.Window
         var channel = _noiseMachine[color];
         channel.OutputGain = (float)settings.Volume;
         channel.NoiseDensity = settings.NoiseDensity;
+        channel.PitchSemitones = (float)settings.PitchSemitones;
         channel.UpdateCutoffs(
             (float)settings.HighPassCutoff,
             (float)settings.LowPassCutoff,
@@ -525,12 +539,14 @@ public partial class MainWindow : System.Windows.Window
             channel.LowPassCutoff,
             channel.HighPassCutoff,
             channel.Colorness,
-            _preferences.GetNoiseSettings(_activeNoiseColor).Bounds);
+            _preferences.GetNoiseSettings(_activeNoiseColor).Bounds,
+            channel.PitchSemitones);
         _preferences = _preferences.WithNoiseSettings(_activeNoiseColor, settings.Normalize());
     }
 
     private Slider[] NoiseSliders =>
-        [GeneratedVolumeSlider, LowPassCutoffSlider, HighPassCutoffSlider, ColornessSlider, NoiseDensitySlider];
+        [GeneratedVolumeSlider, PitchSlider, LowPassCutoffSlider, HighPassCutoffSlider,
+            ColornessSlider, NoiseDensitySlider];
 
     private bool IsApplyingSettings(object sender) =>
         _applyingSettings || (sender is Slider slider && _sliderAnimations.ContainsKey(slider));
@@ -683,14 +699,15 @@ public partial class MainWindow : System.Windows.Window
 
     private void ResetBounds_Click(object sender, RoutedEventArgs e)
     {
-        SetBounds((NoiseColor)((Button)sender).Tag, NoiseBounds.Defaults);
+        var color = (NoiseColor)((Button)sender).Tag;
+        SetBounds(color, NoiseBounds.Defaults(color));
     }
 
     private void ResetAllBounds_Click(object sender, RoutedEventArgs e)
     {
         foreach (var color in Enum.GetValues<NoiseColor>())
         {
-            SetBounds(color, NoiseBounds.Defaults);
+            SetBounds(color, NoiseBounds.Defaults(color));
         }
     }
 

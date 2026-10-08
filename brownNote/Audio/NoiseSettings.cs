@@ -15,7 +15,12 @@ internal sealed record NoiseBounds(
     public const double FrequencyFloor = 1;
     public const double FrequencyCeiling = NoiseChannel.SampleRate / 2;
 
-    public static NoiseBounds Defaults { get; } = new(10, 1000, 80, 24000, 0, NoiseChannel.MaximumOutputGain, 0, 100);
+    public static NoiseBounds Defaults(NoiseColor color) => color switch
+    {
+        NoiseColor.Green => new(10, 300, 80, 4000, 0, 1, 0, 100),
+        NoiseColor.White => new(10, 1000, 80, 20000, 0, 2, 0, 100),
+        _ => new(10, 100, 80, 1000, 0, 6, 0, 100)
+    };
 
     [JsonIgnore]
     public bool IsValid =>
@@ -48,13 +53,14 @@ internal sealed record NoiseSettings(
     double LowPassCutoff,
     double HighPassCutoff,
     double Colorness,
-    NoiseBounds Bounds)
+    NoiseBounds Bounds,
+    double PitchSemitones = 0)
 {
     public static NoiseSettings Defaults(NoiseColor color) => color switch
     {
-        NoiseColor.White => new(1, 4, 18000, 20, WhiteNoiseFilter.Colorness, NoiseBounds.Defaults),
-        NoiseColor.Green => new(1, 4, 2000, 80, GreenNoiseFilter.DefaultColorness, NoiseBounds.Defaults),
-        _ => new(1, 4, 120, 17, BrownNoiseFilter.DefaultColorness, NoiseBounds.Defaults)
+        NoiseColor.White => new(1, 4, 18000, 20, WhiteNoiseFilter.Colorness, NoiseBounds.Defaults(color)),
+        NoiseColor.Green => new(0.02, 7, 692, 22, GreenNoiseFilter.DefaultColorness, NoiseBounds.Defaults(color)),
+        _ => new(4.72, 4, 120, 17, BrownNoiseFilter.DefaultColorness, NoiseBounds.Defaults(color))
     };
 
     [JsonIgnore]
@@ -62,6 +68,7 @@ internal sealed record NoiseSettings(
         Bounds is { IsValid: true } &&
         double.IsFinite(Volume) &&
         double.IsFinite(Colorness) &&
+        double.IsFinite(PitchSemitones) &&
         double.IsFinite(LowPassCutoff) &&
         double.IsFinite(HighPassCutoff) &&
         Volume >= 0 &&
@@ -86,6 +93,8 @@ internal sealed record NoiseSettings(
             LowPassCutoff = lowPassCutoff,
             HighPassCutoff = highPassCutoff,
             Colorness = Math.Clamp(Math.Round(Colorness), bounds.ColornessMin, bounds.ColornessMax),
+            PitchSemitones = Math.Clamp(Math.Round(PitchSemitones),
+                NoisePitch.MinimumSemitones, NoisePitch.MaximumSemitones),
             Bounds = bounds
         };
     }

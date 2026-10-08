@@ -41,6 +41,7 @@ public sealed class NoiseChannel : ISampleProvider
     private float _highPassCutoff = DefaultHighPassCutoff;
     private float _lowPassCutoff = DefaultLowPassCutoff;
     private float _colorness;
+    private float _pitchSemitones;
     private int _noiseDensity = DefaultNoiseDensity;
     private float _outputGain = 1f;
     private float _currentSample;
@@ -127,6 +128,20 @@ public sealed class NoiseChannel : ISampleProvider
     {
         get => _colorness;
         set => UpdateCutoffs(_highPassCutoff, _lowPassCutoff, value);
+    }
+
+    public float PitchSemitones
+    {
+        get => _pitchSemitones;
+        set
+        {
+            if (!float.IsFinite(value) ||
+                value is < NoisePitch.MinimumSemitones or > NoisePitch.MaximumSemitones)
+                throw new ArgumentOutOfRangeException(nameof(value));
+
+            _pitchSemitones = value;
+            UpdateTargetSettings();
+        }
     }
 
     public void UpdateCutoffs(float highPassCutoff, float lowPassCutoff, float colorness)
@@ -245,16 +260,23 @@ public sealed class NoiseChannel : ISampleProvider
     private void UpdateTargetSettings()
     {
         var targetSettings = new FilterSettings[MaximumNoiseDensity];
+        var pitchRatio = NoisePitch.Ratio(_pitchSemitones);
         for (var index = 0; index < MaximumNoiseDensity; index++)
         {
             var highPass = _highPassCutoff * (1f + _highPassVariations[index]);
             var lowPass = _lowPassCutoff * (1f + _lowPassVariations[index]);
 
             highPass = MathF.Max(MinimumCutoff, MathF.Min(highPass, lowPass - MinimumCutoff));
+            if (_pitchSemitones != 0)
+            {
+                var shifted = NoisePitch.ScaleCutoffs(highPass, lowPass, pitchRatio);
+                highPass = (float)shifted.HighPass;
+                lowPass = (float)shifted.LowPass;
+            }
             targetSettings[index] = new FilterSettings(
                 GetPoleCoefficient(highPass),
                 1f - GetPoleCoefficient(lowPass),
-                _filter.GetCoefficients(_colorness, _colorVariations[index]));
+                _filter.GetCoefficients(_colorness, _colorVariations[index], pitchRatio));
         }
 
         Volatile.Write(ref _targetSettings, targetSettings);

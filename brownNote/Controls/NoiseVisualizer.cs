@@ -65,6 +65,7 @@ public sealed class NoiseVisualizer : FrameworkElement
     private bool _responseSettling;
     private double _highPassCutoff = NoiseChannel.DefaultHighPassCutoff;
     private double _lowPassCutoff = NoiseChannel.DefaultLowPassCutoff;
+    private double _pitchSemitones;
 
     public NoiseVisualizer()
     {
@@ -143,6 +144,16 @@ public sealed class NoiseVisualizer : FrameworkElement
         InvalidateVisual();
     }
 
+    public double PitchSemitones
+    {
+        get => _pitchSemitones;
+        set
+        {
+            _pitchSemitones = value;
+            InvalidateResponse();
+        }
+    }
+
     private void UpdateRenderingSubscription()
     {
         SetRendering(IsVisible && (_isActive || _level > 0 || _responseSettling));
@@ -203,9 +214,11 @@ public sealed class NoiseVisualizer : FrameworkElement
     private double TargetResponseDb(int column, int columns)
     {
         var frequency = FrequencyAt(column, columns);
-        var highPass = frequency / Math.Sqrt(frequency * frequency + _highPassCutoff * _highPassCutoff);
-        var lowPass = 1 / Math.Sqrt(1 + Math.Pow(frequency / _lowPassCutoff, 2));
-        var color = NoiseColorFilter.Response(_color, _colorness, frequency);
+        var ratio = NoisePitch.Ratio(_pitchSemitones);
+        var cutoffs = NoisePitch.ScaleCutoffs(_highPassCutoff, _lowPassCutoff, ratio);
+        var highPass = frequency / Math.Sqrt(frequency * frequency + cutoffs.HighPass * cutoffs.HighPass);
+        var lowPass = 1 / Math.Sqrt(1 + Math.Pow(frequency / cutoffs.LowPass, 2));
+        var color = NoiseColorFilter.Response(_color, _colorness, frequency, ratio);
         return 20 * Math.Log10(Math.Max(color * highPass * lowPass, 1e-12));
     }
 

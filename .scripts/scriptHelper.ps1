@@ -13,16 +13,26 @@ $versionBuild = "$versionFolder\versionBuild"
 $versionTag = "$versionFolder\versionTag"
 $buildNotes = "$repoRoot\buildNotes.txt"
 $readme = "$repoRoot\README.md"
+$installerFolder = "$repoRoot\.installer"
+$installerOutput = "$installerFolder\Output"
 $publishFolder = "$repoRoot\publish"
+$iconDir = "$repoRoot\.res\icon"
+$iconPng = "$iconDir\icon.png"
+$iconIco = "$iconDir\icon.ico"
+$wizardSmallPng = "$iconDir\installer-wizard-small.png"
+$wizardLargePng = "$iconDir\installer-wizard-large.png"
+$licenseFile = "$repoRoot\LICENSE"
 $appPublisher = 'fosterbarnes'
 $appURL = "https://github.com/$appPublisher/$projectName"
 $ghRepo = "$appPublisher/$projectName"
 $versionContents = ([IO.File]::ReadAllText($version)).Trim()
 $versionTagContents = if (Test-Path -LiteralPath $versionTag) { ([IO.File]::ReadAllText($versionTag)).Trim() } else { '' }
 $tag = if ($versionTagContents) { $versionTagContents } else { "v$versionContents" }
+$imageSizes = @(16, 32, 48, 64, 128, 256)
+$buttonURL = 'https://raw.githubusercontent.com/fosterbarnes/res/main/btn'
 $buildTargets = @(
-    @{ Architecture = 'x64'; RuntimeIdentifier = 'win-x64'; BinFolder = "$publishFolder\build\x64"; ExePath = "$publishFolder\build\x64\$projectExeName" }
-    @{ Architecture = 'arm64'; RuntimeIdentifier = 'win-arm64'; BinFolder = "$publishFolder\build\arm64"; ExePath = "$publishFolder\build\arm64\$projectExeName" }
+    @{ Architecture = 'x64'; RuntimeIdentifier = 'win-x64'; BinFolder = "$publishFolder\build\x64"; ExePath = "$publishFolder\build\x64\$projectExeName"; InstallerName = "$projectName-x64-installer.exe"; InstallerScript = "$installerFolder\$projectName.x64.installer.iss"; InstallerButton = 'x64Installer.svg'; PortableButton = 'x64Portable.svg' }
+    @{ Architecture = 'arm64'; RuntimeIdentifier = 'win-arm64'; BinFolder = "$publishFolder\build\arm64"; ExePath = "$publishFolder\build\arm64\$projectExeName"; InstallerName = "$projectName-arm64-installer.exe"; InstallerScript = "$installerFolder\$projectName.arm64.installer.iss"; InstallerButton = 'arm64.svg'; PortableButton = 'arm64Portable.svg' }
 )
 $noBom = New-Object System.Text.UTF8Encoding $false
 $weztermExe = (Get-Command wezterm.exe -ErrorAction SilentlyContinue)?.Source
@@ -56,8 +66,7 @@ function setVerBuild {
 function checkVerBuild {
     param([string]$Architecture)
     if (Test-Path -LiteralPath $versionBuild) { return }
-    $platform = if ([string]::IsNullOrWhiteSpace($Architecture)) { 'x64' } else { $Architecture }
-    setVerBuild $platform
+    setVerBuild ([string]::IsNullOrWhiteSpace($Architecture) ? 'x64' : $Architecture)
 }
 
 function getArchitecture {
@@ -89,6 +98,7 @@ function getBuildTargets {
 function deleteDir {
     param([Parameter(Mandatory)][string]$Path)
     if (Test-Path -LiteralPath $Path) { Remove-Item -LiteralPath $Path -Recurse -Force }
+    if (Test-Path -LiteralPath $Path) { throw "Could not remove '$Path'." }
 }
 
 function runNativeCommand {
@@ -137,6 +147,35 @@ function closeOut {
     [Environment]::Exit(0)
 }
 
+function convertToIco {
+    param([Parameter(Mandatory)][string]$InputPath)
+    $source = (Resolve-Path -LiteralPath $InputPath).Path
+    $output = [IO.Path]::ChangeExtension($source, '.ico')
+    $arguments = [Collections.Generic.List[string]]::new()
+    $arguments.Add($source)
+    foreach ($size in $imageSizes) {
+        $arguments.AddRange(@('(', '-clone', '0', '-resize', "${size}x${size}", ')'))
+    }
+    $arguments.Add('-delete'); $arguments.Add('0'); $arguments.Add($output)
+    runNativeCommand -FilePath 'magick' -ArgumentList $arguments.ToArray() -Name 'ImageMagick ICO conversion'
+    $output
+}
+
+function writeWizardImages {
+    param([string]$InputPath = $iconPng)
+    $source = (Resolve-Path -LiteralPath $InputPath).Path
+    runNativeCommand -FilePath 'magick' -ArgumentList @($source, '-resize', '256x256', $wizardSmallPng) -Name 'ImageMagick wizard small resize'
+    runNativeCommand -FilePath 'magick' -ArgumentList @($source, '-background', 'black', '-gravity', 'center', '-resize', '240x459', '-extent', '240x459', $wizardLargePng) -Name 'ImageMagick wizard large resize'
+}
+
+function ensureInstallerImages {
+    if (-not (Test-Path -LiteralPath $iconPng)) { throw "Missing source icon: $iconPng" }
+    if (-not (Test-Path -LiteralPath $iconIco)) { convertToIco -InputPath $iconPng | Out-Null }
+    if (-not (Test-Path -LiteralPath $wizardSmallPng) -or -not (Test-Path -LiteralPath $wizardLargePng)) {
+        writeWizardImages -InputPath $iconPng
+    }
+}
+
 function openUrl {
     param([Parameter(Mandatory)][string]$Url)
     if ([string]::IsNullOrWhiteSpace($Url)) { throw 'openUrl requires a URL.' }
@@ -144,8 +183,8 @@ function openUrl {
 }
 
 function buildAssetName {
-    param([Parameter(Mandatory)][ValidateSet('Portable')][string]$Kind, [Parameter(Mandatory)][string]$Architecture)
-    $extension = 'zip'
+    param([Parameter(Mandatory)][ValidateSet('Installer', 'Portable')][string]$Kind, [Parameter(Mandatory)][string]$Architecture)
+    $extension = if ($Kind -eq 'Installer') { 'exe' } else { 'zip' }
     "${projectName}_v${versionContents}_windows-${Architecture}.${extension}"
 }
 
@@ -157,9 +196,11 @@ function buildAll {
         deleteDir $publishFolder
         $params = @{}; if ($Architecture) { $params.Architecture = $Architecture }
         runNativeCommand -FilePath "$PSScriptRoot\build.ps1" -ArgumentList $params -Name 'build.ps1'
+        runNativeCommand -FilePath "$PSScriptRoot\buildInstaller.ps1" -ArgumentList $params -Name 'buildInstaller.ps1'
         New-Item -ItemType Directory -Path $publishFolder -Force | Out-Null
         foreach ($target in (getBuildTargets $Architecture)) {
             Compress-Archive -Path "$($target.BinFolder)\*" -DestinationPath "$publishFolder\$(buildAssetName -Kind Portable -Architecture $target.Architecture)" -Force
+            Copy-Item -LiteralPath "$installerOutput\$($target.InstallerName)" -Destination "$publishFolder\$(buildAssetName -Kind Installer -Architecture $target.Architecture)" -Force
         }
         runNativeCommand -FilePath "$PSScriptRoot\updateReadme.ps1" -ArgumentList @{} -Name 'updateReadme.ps1'
     } finally {
@@ -168,3 +209,4 @@ function buildAll {
 }
 
 Set-Location -LiteralPath $repoRoot
+
