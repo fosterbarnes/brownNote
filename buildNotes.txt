@@ -1,10 +1,1 @@
-v0.2.1. Refine noise controls and sync shared automation
-
-Audio and controls
-- Refined noise generation, pitch controls, and visualization.
-- Updated transport controls and slider handling.
-
-Automation and packaging
-- Added installer sources and supporting images for x64 and ARM64.
-- Synced shared push automation and download buttons.
-- Stamped assembly versions from the repository version file.
+Update release scripts
