@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>brownNote</RootNamespace>
     <AssemblyName>brownNote</AssemblyName>
-    <ApplicationIcon>..\.res\icon\icon.ico</ApplicationIcon>
+    <ApplicationIcon>..\..\.res\icon\icon.ico</ApplicationIcon>
     <Platforms>x64;ARM64</Platforms>
     <PlatformTarget Condition="'$(Platform)' == 'x64'">x64</PlatformTarget>
     <PlatformTarget Condition="'$(Platform)' == 'ARM64' Or '$(Platform)' == 'arm64'">ARM64</PlatformTarget>
@@ -20,8 +20,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Resource Include="..\.res\icon\icon512.png" Link="Resources\icon512.png" />
-    <Content Include="..\.res\wav\*.wav" Link="Sounds\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Always" />
-    <Content Include="..\.version\version" Link="Version" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Always" />
+    <Resource Include="..\..\.res\icon\icon512.png" Link="Resources\icon512.png" />
+    <Content Include="..\..\.res\wav\*.wav" Link="Sounds\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Always" />
+    <Content Include="..\..\.version\version" Link="Version" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Always" />
   </ItemGroup>
 </Project>

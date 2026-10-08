@@ -7,17 +7,25 @@ $assets = @(Get-ChildItem -LiteralPath $publishFolder -File)
 if (-not $assets) { throw "No release assets found in $publishFolder" }
 $assetArgs = @($assets | ForEach-Object FullName)
 
-$releasesJson = runNativeCommand gh @('release', 'list', '--repo', $ghRepo,
-    '--exclude-drafts', '--exclude-pre-releases', '--json', 'tagName,publishedAt',
-    '--limit', '100') 'gh release list'
-$previousRelease = $releasesJson | ConvertFrom-Json |
-    Where-Object tagName -ne $tag | Sort-Object publishedAt -Descending | Select-Object -First 1
-$releaseNotes = if ($previousRelease) {
-    $comparison = "$($previousRelease.tagName)...$tag"
-    "**Full Changelog**: [$comparison]($appURL/compare/$comparison)"
-} else { '' }
-$releaseArgs = @('release', 'create', $tag, '--title', $tag, '--repo', $ghRepo,
-    '--latest', '--notes', $releaseNotes)
+$releaseTitle = $tag
+$releaseNotes = ''
+if (Test-Path -LiteralPath $buildNotes) {
+    $lines = @([IO.File]::ReadAllLines($buildNotes))
+    if ($lines.Count -gt 0 -and $lines[0].Trim()) {
+        $releaseTitle = $lines[0].Trim()
+        if ($lines.Count -ge 2) {
+            if ($lines[1].Trim()) {
+                throw 'buildNotes.txt must have one blank line after the first line, then the commit description.'
+            }
+            if ($lines.Count -gt 2) {
+                $releaseNotes = ($lines[2..($lines.Count - 1)] -join "`n").Trim()
+            }
+        }
+    }
+}
+
+$releaseArgs = @('release', 'create', $tag, '--title', $releaseTitle, '--repo', $ghRepo)
+if ($releaseNotes) { $releaseArgs += @('--notes', $releaseNotes) } else { $releaseArgs += '--generate-notes' }
 $releaseUrl = "$appURL/releases/tag/$tag"
 if ($DryRun) {
     Write-Host "Dry run: git tag -f $tag"

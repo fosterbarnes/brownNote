@@ -17,14 +17,10 @@ if (-not $subject -and $notesChanged -and (Test-Path -LiteralPath $buildNotes)) 
     $lines = @([IO.File]::ReadAllLines($buildNotes))
     if ($lines.Count -gt 0 -and $lines[0].Trim()) {
         $subject = $lines[0].Trim()
-        if ($lines.Count -ge 2) {
-            if ($lines[1].Trim()) {
-                throw 'buildNotes.txt must have one blank line after the first line, then the commit description.'
-            }
-            if ($lines.Count -gt 2) {
-                $body = ($lines[2..($lines.Count - 1)] -join "`n").Trim()
-            }
+        if ($lines.Count -ge 2 -and $lines[1].Trim()) {
+            throw 'buildNotes.txt must have one blank line after the first line, then the commit description.'
         }
+        if ($lines.Count -gt 2) { $body = ($lines[2..($lines.Count - 1)] -join "`n").Trim() }
     }
 }
 if (-not $subject -and -not $DryRun) { $subject = (Read-Host 'Commit message').Trim() }
@@ -47,4 +43,3 @@ runNativeCommand git $commitArgs 'git commit'
 runNativeCommand git $pushArgs 'git push'
 openUrl $appURL
 closeOut 0
-

@@ -4,6 +4,7 @@ publish/
 .config/
 .installer/Output/
 .version/versionBuild
+desktop.ini
+buildNotes.*
 *.user
 *.suo
-*.md

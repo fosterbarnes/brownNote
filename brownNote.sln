@@ -2,7 +2,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "brownNote", "brownNote\brownNote.csproj", "{A4E3E7A2-3D2A-4DE5-9F6A-8E2C2D9B6F31}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "brownNote", "src\brownNote\brownNote.csproj", "{A4E3E7A2-3D2A-4DE5-9F6A-8E2C2D9B6F31}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

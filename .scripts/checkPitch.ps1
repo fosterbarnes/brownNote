@@ -4,7 +4,7 @@ $repoRoot = Split-Path -Path $PSScriptRoot -Parent
 Set-Location -LiteralPath $repoRoot
 
 # Compile the actual pitch math in isolation; no app build or audio device is needed.
-$source = [IO.File]::ReadAllText("$repoRoot\brownNote\Audio\NoisePitch.cs")
+$source = [IO.File]::ReadAllText("$repoRoot\src\brownNote\Audio\NoisePitch.cs")
 Add-Type -TypeDefinition ("using System;`n" + $source + @'
 
 internal static class NoiseChannel { public const int SampleRate = 48000; }
